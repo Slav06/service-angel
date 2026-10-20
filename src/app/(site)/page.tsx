@@ -1,10 +1,11 @@
 import { asc, eq } from 'drizzle-orm';
+import Image from 'next/image';
 import Link from 'next/link';
 import { getDb } from '@/db';
 import { packages } from '@/db/schema';
 import { Logo } from '@/components/logo';
 import { Icon, type IconName } from '@/components/site/icons';
-import { BrowserFrame, MiniSite, PhoneFrame, SAMPLES } from '@/components/site/mockups';
+import { BrowserFrame, DEMOS, PhoneShot, ScrollPreview } from '@/components/site/mockups';
 import { BRAND } from '@/lib/brand';
 import { money } from '@/lib/format';
 import { QuoteForm } from './quote-form';
@@ -191,11 +192,11 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
           </div>
 
           <div className="relative mx-auto w-full max-w-xl lg:mx-0">
-            <BrowserFrame url="riveraplumbing.com" className="relative z-10 -rotate-1">
-              <MiniSite t={SAMPLES[0]} />
+            <BrowserFrame url="northlinebuilders.com" className="relative z-10 -rotate-1">
+              <Image src="/demo/shots/northline-hero.webp" alt="Sample contractor website by Service Angel" width={1100} height={688} priority sizes="(min-width: 1024px) 40vw, 90vw" className="w-full" />
             </BrowserFrame>
             <div className="animate-float absolute -right-3 -bottom-12 z-20 hidden sm:block lg:-right-8">
-              <PhoneFrame t={SAMPLES[2]} />
+              <PhoneShot src="/demo/shots/lumen-mobile.webp" alt="Sample spa website on a phone" />
             </div>
             <div className="animate-float-slow absolute -top-6 -left-4 z-20 hidden items-center gap-3 rounded-xl bg-white px-4 py-3 text-zinc-900 shadow-xl sm:flex lg:-left-10">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -261,23 +262,40 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionHeading
             eyebrow="Sample designs"
-            title="Modern, polished, built to convert"
-            sub="A taste of the style we build in. Every site is designed around the business it’s for."
+            title="Every business gets its own look"
+            sub="No templates with your logo swapped in. Explore a few full demo sites — hover a preview to scroll it, or open the live demo."
           />
-          <div className="mt-14 grid gap-8 lg:grid-cols-3">
-            {SAMPLES.map((t) => (
-              <figure key={t.brand} className="group">
-                <BrowserFrame url={`${t.brand.toLowerCase().replace(/[^a-z]+/g, '')}.com`} className="transition duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_30px_60px_-15px_rgba(15,31,92,0.35)]">
-                  <MiniSite t={t} compact />
-                </BrowserFrame>
-                <figcaption className="mt-4 flex items-center justify-between px-1">
-                  <span className="font-semibold">{t.brand}</span>
-                  <span className="text-sm text-zinc-500">{t.industry}</span>
-                </figcaption>
-              </figure>
+          <div className="mt-16 space-y-24">
+            {DEMOS.map((d, i) => (
+              <div key={d.slug} className="grid items-center gap-10 lg:grid-cols-[1.35fr_1fr] lg:gap-16">
+                <a href={`/demo/${d.slug}`} className={`group relative block ${i % 2 ? 'lg:order-2' : ''}`}>
+                  <div className={`absolute -inset-4 rounded-3xl bg-gradient-to-br ${['from-amber-200/60 to-stone-200/40', 'from-rose-200/60 to-amber-100/40', 'from-emerald-100/70 to-rose-100/50'][i % 3]} blur-2xl`} />
+                  <BrowserFrame url={d.url} className="relative transition duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_40px_80px_-20px_rgba(15,31,92,0.4)]">
+                    <ScrollPreview src={`/demo/shots/${d.slug}.webp`} alt={`${d.name} demo website`} />
+                  </BrowserFrame>
+                </a>
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">{d.industry}</p>
+                  <h3 className="mt-2 font-display text-3xl font-bold tracking-tight">{d.name}</h3>
+                  <p className="mt-4 text-lg leading-relaxed text-zinc-600">{d.pitch}</p>
+                  <ul className="mt-6 grid grid-cols-2 gap-3">
+                    {d.highlights.map((h) => (
+                      <li key={h} className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+                          <Icon name="check" className="h-3 w-3" />
+                        </span>
+                        {h}
+                      </li>
+                    ))}
+                  </ul>
+                  <a href={`/demo/${d.slug}`} className="group mt-8 inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-5 py-3 font-semibold transition hover:border-brand-600 hover:text-brand-700">
+                    View live demo <Icon name="arrow" className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                  </a>
+                </div>
+              </div>
             ))}
           </div>
-          <p className="mt-8 text-center text-xs text-zinc-400">Example designs shown for illustration.</p>
+          <p className="mt-16 text-center text-xs text-zinc-400">Demo sites for fictional businesses, shown to illustrate our work.</p>
         </div>
       </section>
 
