@@ -4,8 +4,9 @@ import { and, count, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
-import { calls, leadRequests, leads, packages, sales, SALE_STATUSES, users, type SaleStatus } from '@/db/schema';
+import { calls, leadRequests, leads, packages, sales, users } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
+import { recordPayment } from '@/lib/billing';
 import { hashKey, isValidKey, KEY_RULE, normalizeKey } from '@/lib/auth-key';
 import { isOutcome, isStage, OUTCOME_STAGE, stageIndex } from '@/lib/format';
 import { cents, date, id, int, optStr, str } from '@/lib/form';
@@ -118,32 +119,33 @@ export async function recordSale(_prev: ActionState, f: FormData): Promise<Actio
   const lead = leadId ? await ownLead(leadId, user.id) : null;
   if (leadId && !lead) return { error: 'That lead is not assigned to you.' };
 
-  const [pkg] = (id(f, 'packageId') && (await db.select().from(packages).where(eq(packages.id, id(f, 'packageId')!)))) || [];
+  const pkgId = id(f, 'packageId');
+  const [pkg] = pkgId ? await db.select().from(packages).where(eq(packages.id, pkgId)) : [];
   const clientName = str(f, 'clientName', 200) || lead?.business || '';
   if (!clientName) return { error: 'Client name is required.' };
+  const monthlyCents = cents(f, 'monthly') ?? pkg?.monthlyCents;
+  if (monthlyCents == null || monthlyCents <= 0) return { error: 'Enter the monthly price (e.g. 500).' };
 
-  const priceCents = cents(f, 'price') ?? pkg?.priceCents;
-  if (priceCents == null || priceCents <= 0) return { error: 'Enter the sale price (e.g. 2499).' };
-  const monthlyCents = cents(f, 'monthly') ?? pkg?.monthlyCents ?? 0;
-  const status = str(f, 'status') as SaleStatus;
-  const collectedCents =
-    status === 'paid' ? priceCents : Math.min(priceCents, cents(f, 'collected') ?? 0);
-
-  await db.insert(sales).values({
-    repId: user.id,
-    leadId: lead?.id ?? null,
-    packageId: pkg?.id ?? null,
-    clientName,
-    packageName: pkg?.name ?? (str(f, 'customName', 80) || 'Custom website'),
-    priceCents,
-    monthlyCents,
-    buildCostCents: pkg?.buildCostCents ?? 0,
-    commissionPct: user.commissionPct,
-    commissionCents: Math.round((priceCents * user.commissionPct) / 100),
-    collectedCents,
-    status: SALE_STATUSES.includes(status) && status !== 'refunded' ? status : 'unpaid',
-    notes: optStr(f, 'notes', 2000),
-  });
+  const [sale] = await db
+    .insert(sales)
+    .values({
+      repId: user.id,
+      leadId: lead?.id ?? null,
+      packageId: pkg?.id ?? null,
+      clientName,
+      packageName: pkg?.name ?? 'Website Plan',
+      priceCents: cents(f, 'setup') ?? pkg?.priceCents ?? 0,
+      monthlyCents,
+      buildCostCents: pkg?.buildCostCents ?? 0,
+      commissionPct: user.commissionPct,
+      notes: optStr(f, 'notes', 2000),
+    })
+    .returning();
+  // The rep can say the first month (and setup fee) were collected on the spot.
+  if (f.get('firstPaid') === 'on') {
+    await recordPayment(sale);
+    if (sale.priceCents > 0) await recordPayment(sale, { kind: 'setup' });
+  }
   if (lead) await db.update(leads).set({ stage: 'won', nextFollowUpAt: null, updatedAt: new Date() }).where(eq(leads.id, lead.id));
   refresh();
   redirect('/portal/sales?added=1');

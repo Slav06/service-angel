@@ -11,7 +11,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<'/port
   const period = isPeriod(p) ? p : 'month';
   return (
     <>
-      <PageHeader title="Leaderboard" sub="Ranked by revenue, then deals, then calls.">
+      <PageHeader title="Leaderboard" sub="Ranked by payments collected, then new clients, then calls.">
         <PeriodTabs current={period} base="/portal/leaderboard" />
       </PageHeader>
       <div className="card overflow-x-auto p-0">

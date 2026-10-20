@@ -22,7 +22,7 @@ export default async function PortalLayout({ children }: LayoutProps<'/portal'>)
         { href: '/portal', label: 'Dashboard' },
         { href: '/portal/calls', label: 'Log calls' },
         { href: '/portal/leads', label: 'My leads', badge: due + fresh },
-        { href: '/portal/sales', label: 'My sales' },
+        { href: '/portal/sales', label: 'My clients' },
         { href: '/portal/requests', label: 'Request leads' },
         { href: '/portal/leaderboard', label: 'Leaderboard' },
         { href: '/portal/profile', label: 'Profile' },

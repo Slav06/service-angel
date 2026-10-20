@@ -46,16 +46,18 @@ export function QuoteForm({ refId, packages }: { refId?: string; packages: strin
         <label className="label">Current website (if any)</label>
         <input name="website" className="input" />
       </div>
-      <div>
-        <label className="label">Package</label>
-        <select name="package" className="input">
-          <option value="">Not sure yet</option>
-          {packages.map((p) => (
-            <option key={p}>{p}</option>
-          ))}
-        </select>
-      </div>
-      <div className="sm:col-span-2">
+      {packages.length > 0 && (
+        <div>
+          <label className="label">Package</label>
+          <select name="package" className="input">
+            <option value="">Not sure yet</option>
+            {packages.map((p) => (
+              <option key={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className={packages.length > 0 ? 'sm:col-span-2' : ''}>
         <label className="label">Anything else?</label>
         <textarea name="message" rows={3} className="input" />
       </div>

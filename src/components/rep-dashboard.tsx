@@ -48,22 +48,27 @@ export async function RepDashboard({ rep, period, base, viewer }: { rep: User; p
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Revenue" value={money(s.revenue)} sub={`${s.deals} deal${s.deals === 1 ? '' : 's'} closed`} tone="brand" />
-        <Stat label={viewer === 'self' ? 'My commission' : 'Rep commission'} value={money(s.commission)} sub={`${rep.commissionPct}% of sales`} tone="good" />
+        <Stat label="Revenue collected" value={money(s.revenue)} sub="client payments received" tone="brand" />
+        <Stat label={viewer === 'self' ? 'My commission' : 'Rep commission'} value={money(s.commission)} sub={`${rep.commissionPct}% of every payment`} tone="good" />
+        <Stat label="New clients" value={s.deals} sub={`+${money(s.newMrr)}/mo signed`} />
         <Stat label="Calls made" value={s.calls} sub={`${s.talkMinutes} min talk time`} />
-        <Stat label="Close rate" value={pct(s.closeRate)} sub="deals ÷ calls" />
+        <Stat label="Close rate" value={pct(s.closeRate)} sub="new clients ÷ calls" />
         <Stat label="Connect rate" value={pct(s.connectRate)} sub={`${s.conversations} real conversations`} />
         <Stat label="Appointments" value={s.appointments} sub={`${pct(s.apptToClose)} of appts close`} />
-        <Stat label="Avg deal size" value={s.avgDeal ? money(s.avgDeal) : '—'} />
-        <Stat label="Cash collected" value={money(s.collected)} sub={`${money(s.revenue - s.collected)} still owed by clients`} />
-        <Stat label="Recurring added" value={`${money(s.monthlyRecurring)}/mo`} sub="hosting & care plans" />
+        <Stat label="Active clients now" value={s.activeClients} sub={`${money(s.mrr)}/mo · ${s.cancelled} cancelled in period`} />
+        <Stat
+          label={viewer === 'self' ? 'My monthly income now' : 'Rep monthly income now'}
+          value={`${money((s.mrr * rep.commissionPct) / 100)}/mo`}
+          sub="if every active client pays"
+          tone="good"
+        />
         <Stat label="Leads received" value={s.leadsReceived} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="card space-y-5">
           <p className="h2">Goals</p>
-          <Progress label="Revenue this month" value={month.revenue} goal={rep.monthlyGoalCents} format={(n) => money(n)} />
+          <Progress label="Revenue collected this month" value={month.revenue} goal={rep.monthlyGoalCents} format={(n) => money(n)} />
           <Progress label="Calls today" value={today.calls} goal={rep.dailyCallGoal} format={String} />
         </div>
         <div className="card">
@@ -107,7 +112,7 @@ export async function RepDashboard({ rep, period, base, viewer }: { rep: User; p
         </div>
         <div className="card">
           <Bars
-            label="Revenue — last 30 days"
+            label="Payments collected — last 30 days"
             points={series.map((p) => ({ key: p.day, label: label(p.day), value: p.revenue }))}
             format={(n) => money(n)}
           />

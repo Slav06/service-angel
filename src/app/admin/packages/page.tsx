@@ -18,15 +18,15 @@ function PackageForm({ p }: { p?: Package }) {
         <input name="name" defaultValue={p?.name} required className="input" />
       </div>
       <div>
-        <label className="label">Price ($)</label>
-        <input name="price" defaultValue={p ? p.priceCents / 100 : ''} required className="input" />
+        <label className="label">Setup fee ($, one-time)</label>
+        <input name="price" defaultValue={p ? p.priceCents / 100 : 0} className="input" />
       </div>
       <div>
-        <label className="label">Monthly ($)</label>
+        <label className="label">Monthly price ($)</label>
         <input name="monthly" defaultValue={p ? p.monthlyCents / 100 : 0} className="input" />
       </div>
       <div>
-        <label className="label">Build cost ($)</label>
+        <label className="label">Your cost to build ($)</label>
         <input name="buildCost" defaultValue={p ? p.buildCostCents / 100 : 0} className="input" />
       </div>
       <div>
@@ -50,7 +50,7 @@ function PackageForm({ p }: { p?: Package }) {
         </label>
         {p && (
           <p className="text-xs text-zinc-500">
-            Margin before commission: {money(p.priceCents - p.buildCostCents)}
+            {money(p.monthlyCents)}/mo{p.priceCents ? ` + ${money(p.priceCents)} setup` : ''} · build cost {money(p.buildCostCents)}
           </p>
         )}
         <Submit>{p ? 'Save' : 'Add package'}</Submit>
@@ -65,7 +65,7 @@ export default async function Packages() {
   const rows = await db.select().from(packages).orderBy(asc(packages.sort), asc(packages.id));
   return (
     <>
-      <PageHeader title="Packages & pricing" sub="What’s shown on the public website and offered in the rep sale form. Build cost is your cost to deliver — used for profit." />
+      <PageHeader title="Packages & pricing" sub="What’s shown on the public website and offered in the rep sale form. Build cost is your one-time cost to deliver a site — subtracted from profit." />
       <div className="space-y-4">
         {rows.map((p) => (
           <PackageForm key={p.id} p={p} />

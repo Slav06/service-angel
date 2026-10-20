@@ -6,34 +6,20 @@ import { packages } from './schema';
 export async function seedPackages(db: DB) {
   const [{ n }] = await db.select({ n: count() }).from(packages);
   if (n > 0) return;
-  await db.insert(packages).values([
-    {
-      name: 'Starter',
-      tagline: 'A clean, fast site to get you found.',
-      priceCents: 99_900,
-      monthlyCents: 4_900,
-      buildCostCents: 15_000,
-      sort: 1,
-      features: ['Up to 5 pages', 'Mobile-friendly design', 'Contact form', 'Google Maps & business profile setup', 'Hosting & SSL included'],
-    },
-    {
-      name: 'Business',
-      tagline: 'Everything a local business needs to win customers online.',
-      priceCents: 249_900,
-      monthlyCents: 9_900,
-      buildCostCents: 40_000,
-      featured: true,
-      sort: 2,
-      features: ['Up to 12 pages', 'Custom design & copywriting', 'Online booking or quote requests', 'Local SEO setup', 'Reviews widget', 'Monthly updates included'],
-    },
-    {
-      name: 'Premium',
-      tagline: 'Online store or advanced features, done for you.',
-      priceCents: 499_900,
-      monthlyCents: 19_900,
-      buildCostCents: 90_000,
-      sort: 3,
-      features: ['Unlimited pages', 'E-commerce or custom features', 'Payments & integrations', 'Advanced SEO & analytics', 'Priority support', 'Quarterly strategy call'],
-    },
-  ]);
+  await db.insert(packages).values({
+    name: 'Website Plan',
+    tagline: 'Everything your business needs online — one simple monthly price.',
+    priceCents: 0,
+    monthlyCents: 50_000,
+    featured: true,
+    features: [
+      'Custom design & copywriting',
+      'Mobile-friendly, fast-loading pages',
+      'Hosting, SSL security & backups included',
+      'Local SEO & Google Business Profile setup',
+      'Contact & quote request forms',
+      'Monthly content updates',
+      'A real person to call for support',
+    ],
+  });
 }

@@ -21,7 +21,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/reps', label: 'Sales reps' },
         { href: '/admin/requests', label: 'Lead requests', badge: pending },
         { href: '/admin/leads', label: 'Leads', badge: inbound },
-        { href: '/admin/sales', label: 'Sales & payouts' },
+        { href: '/admin/sales', label: 'Clients & payouts' },
         { href: '/admin/leaderboard', label: 'Leaderboard' },
         { href: '/admin/packages', label: 'Packages & pricing' },
       ]}

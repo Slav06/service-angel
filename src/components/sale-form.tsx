@@ -6,6 +6,10 @@ import { ActionForm, Submit } from './action-form';
 
 type Pkg = { id: number; name: string; priceCents: number; monthlyCents: number };
 const dollars = (c: number) => String(c / 100);
+const fmt = (n: number) => {
+  const digits = Number.isInteger(n) ? 0 : 2;
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
 
 export function SaleForm({
   packages,
@@ -18,12 +22,11 @@ export function SaleForm({
   leadId?: number;
   commissionPct: number;
 }) {
-  const [pkgId, setPkgId] = useState(String(packages.find((p) => p.name === 'Business')?.id ?? packages[0]?.id ?? ''));
+  const [pkgId, setPkgId] = useState(String(packages[0]?.id ?? ''));
   const pkg = packages.find((p) => String(p.id) === pkgId);
-  const [price, setPrice] = useState(pkg ? dollars(pkg.priceCents) : '');
-  const [monthly, setMonthly] = useState(pkg ? dollars(pkg.monthlyCents) : '0');
-  const [status, setStatus] = useState('unpaid');
-  const priceNum = parseFloat(price.replace(/[$,]/g, '')) || 0;
+  const [monthly, setMonthly] = useState(pkg ? dollars(pkg.monthlyCents) : '500');
+  const [setup, setSetup] = useState(pkg ? dollars(pkg.priceCents) : '0');
+  const perMonth = ((parseFloat(monthly.replace(/[$,]/g, '')) || 0) * commissionPct) / 100;
 
   return (
     <ActionForm action={recordSale} className="card grid max-w-2xl gap-3 sm:grid-cols-2">
@@ -42,65 +45,51 @@ export function SaleForm({
         <label className="label">Client / business name (leave blank to use the lead’s name)</label>
         <input name="clientName" className="input" />
       </div>
-      <div>
-        <label className="label">Package</label>
-        <select
-          name="packageId"
-          value={pkgId}
-          onChange={(e) => {
-            setPkgId(e.target.value);
-            const p = packages.find((x) => String(x.id) === e.target.value);
-            if (p) {
-              setPrice(dollars(p.priceCents));
-              setMonthly(dollars(p.monthlyCents));
-            }
-          }}
-          className="input"
-        >
-          {packages.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          <option value="">Custom</option>
-        </select>
-      </div>
-      {!pkgId && (
-        <div>
-          <label className="label">Custom package name</label>
-          <input name="customName" className="input" />
+      {packages.length > 1 ? (
+        <div className="sm:col-span-2">
+          <label className="label">Plan</label>
+          <select
+            name="packageId"
+            value={pkgId}
+            onChange={(e) => {
+              setPkgId(e.target.value);
+              const p = packages.find((x) => String(x.id) === e.target.value);
+              if (p) {
+                setMonthly(dollars(p.monthlyCents));
+                setSetup(dollars(p.priceCents));
+              }
+            }}
+            className="input"
+          >
+            {packages.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </div>
+      ) : (
+        <input type="hidden" name="packageId" value={pkgId} />
       )}
       <div>
-        <label className="label">Sale price ($)</label>
-        <input name="price" value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" required className="input" />
+        <label className="label">Monthly price ($/mo)</label>
+        <input name="monthly" value={monthly} onChange={(e) => setMonthly(e.target.value)} inputMode="decimal" required className="input" />
       </div>
       <div>
-        <label className="label">Monthly plan ($/mo)</label>
-        <input name="monthly" value={monthly} onChange={(e) => setMonthly(e.target.value)} inputMode="decimal" className="input" />
+        <label className="label">One-time setup fee ($)</label>
+        <input name="setup" value={setup} onChange={(e) => setSetup(e.target.value)} inputMode="decimal" className="input" />
       </div>
-      <div>
-        <label className="label">Payment status</label>
-        <select name="status" value={status} onChange={(e) => setStatus(e.target.value)} className="input">
-          <option value="unpaid">Awaiting payment</option>
-          <option value="deposit">Deposit paid</option>
-          <option value="paid">Paid in full</option>
-        </select>
-      </div>
-      {status === 'deposit' && (
-        <div>
-          <label className="label">Amount collected ($)</label>
-          <input name="collected" inputMode="decimal" className="input" />
-        </div>
-      )}
+      <label className="flex items-center gap-2 text-sm sm:col-span-2">
+        <input type="checkbox" name="firstPaid" /> The client already paid the first month
+      </label>
       <div className="sm:col-span-2">
         <label className="label">Notes</label>
         <textarea name="notes" rows={2} className="input" />
       </div>
-      <div className="flex items-center gap-4 sm:col-span-2">
+      <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
         <Submit>Record sale</Submit>
         <p className="text-sm text-zinc-600">
-          Your commission: <b className="text-green-700">${((priceNum * commissionPct) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b> ({commissionPct}%)
+          You earn <b className="text-green-700">{fmt(perMonth)}/mo</b> ({commissionPct}%) for every month this client pays.
         </p>
       </div>
     </ActionForm>

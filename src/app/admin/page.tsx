@@ -33,21 +33,21 @@ export default async function Overview({ searchParams }: PageProps<'/admin'>) {
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Revenue" value={money(t.revenue)} sub={`${t.deals} deals`} tone="brand" />
+        <Stat label="Revenue collected" value={money(t.revenue)} sub="client payments received" tone="brand" />
         <Stat label="Company profit" value={money(t.companyProfit)} sub={`${pct(ratio(t.companyProfit, t.revenue))} margin`} tone="good" />
-        <Stat label="Commissions" value={money(t.commission)} sub={`${money(owed.owed)} owed (all time)`} />
-        <Stat label="Build costs" value={money(t.buildCost)} />
-        <Stat label="Cash collected" value={money(t.collected)} sub={`${money(t.revenue - t.collected)} outstanding`} />
+        <Stat label="Commissions earned" value={money(t.commission)} sub={`${money(owed.owed)} owed (all time)`} />
+        <Stat label="Monthly recurring now" value={`${money(t.mrr)}/mo`} sub={`${t.activeClients} active clients`} tone="brand" />
+        <Stat label="New clients" value={t.deals} sub={`+${money(t.newMrr)}/mo · ${t.cancelled} cancelled`} />
         <Stat label="Calls" value={t.calls} sub={`${t.talkMinutes} min talk time`} />
-        <Stat label="Close rate" value={pct(t.closeRate)} sub="deals ÷ calls" />
+        <Stat label="Close rate" value={pct(t.closeRate)} sub="new clients ÷ calls" />
         <Stat label="Connect rate" value={pct(t.connectRate)} sub={`${t.conversations} conversations`} />
-        <Stat label="Avg deal" value={t.avgDeal ? money(t.avgDeal) : '—'} sub={`${t.appointments} appointments`} />
-        <Stat label="Recurring added" value={`${money(t.monthlyRecurring)}/mo`} />
+        <Stat label="Appointments" value={t.appointments} sub={`${pct(t.apptToClose)} close`} />
+        <Stat label="Build costs" value={money(t.buildCost)} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="card">
-          <Bars label="Team revenue — last 30 days" points={series.map((d) => ({ key: d.day, label: label(d.day), value: d.revenue }))} format={(n) => money(n)} />
+          <Bars label="Payments collected — last 30 days" points={series.map((d) => ({ key: d.day, label: label(d.day), value: d.revenue }))} format={(n) => money(n)} />
         </div>
         <div className="card">
           <Bars label="Team calls — last 30 days" points={series.map((d) => ({ key: d.day, label: label(d.day), value: d.calls }))} format={String} />
@@ -60,10 +60,11 @@ export default async function Overview({ searchParams }: PageProps<'/admin'>) {
           <thead>
             <tr>
               <th>Rep</th>
-              <th className="text-right">Revenue</th>
+              <th className="text-right">Collected</th>
               <th className="text-right">Profit</th>
               <th className="text-right">Commission</th>
-              <th className="text-right">Deals</th>
+              <th className="text-right">New clients</th>
+              <th className="text-right">Active</th>
               <th className="text-right">Calls</th>
               <th className="text-right">Convos</th>
               <th className="text-right">Appts</th>
@@ -85,6 +86,7 @@ export default async function Overview({ searchParams }: PageProps<'/admin'>) {
                 <td className="text-right tabular-nums text-green-700">{money(s?.companyProfit)}</td>
                 <td className="text-right tabular-nums">{money(s?.commission)}</td>
                 <td className="text-right tabular-nums">{s?.deals ?? 0}</td>
+                <td className="text-right tabular-nums">{s?.activeClients ?? 0}</td>
                 <td className="text-right tabular-nums">{s?.calls ?? 0}</td>
                 <td className="text-right tabular-nums">{s?.conversations ?? 0}</td>
                 <td className="text-right tabular-nums">{s?.appointments ?? 0}</td>

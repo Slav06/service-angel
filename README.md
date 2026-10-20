@@ -4,7 +4,7 @@ Public website for selling websites to local businesses, plus a private portal f
 
 ## What's in it
 
-**Public site (`/`)** — hero, pricing (from the Packages table), process, FAQ, and a quote form. Every quote becomes a lead.
+**Public site (`/`)** — hero, pricing (one Website Plan at $500/month, from the Packages table), process, FAQ, and a quote form. Every quote becomes a lead.
 A rep's referral link (`/?ref=<rep id>`, shown on their Profile page) assigns the quote straight to that rep.
 
 **Rep portal (`/portal`)** — each rep only sees their own data:
@@ -14,14 +14,16 @@ A rep's referral link (`/?ref=<rep id>`, shown on their Profile page) assigns th
   30-day charts of calls and revenue, leaderboard rank
 - Log calls (one-tap outcomes: no answer, voicemail, gatekeeper, not interested, call back, interested, appointment, sold)
 - My leads with stages, notes, follow-up dates, per-lead call history; add their own leads
-- Record sales (commission is calculated from their % and frozen on the sale)
+- Record sales. Each sale is a client on a monthly plan; the rep earns their % (frozen on the sale) on **every payment**
+  the client makes, for as long as they stay
 - Request leads (quantity, niche, area, urgency) and track the request's status
 - Leaderboard, profile (contact info, change key, referral link)
 
-**Owner admin (`/admin`)** — company revenue, profit (price − commission − build cost), margin, commissions, cash
+**Owner admin (`/admin`)** — company revenue collected, monthly recurring revenue, profit (payments − commission − build cost), margin, commissions, cash
 collected, calls and rates, per-rep table; open any rep's dashboard; add reps / set commission % and goals / reset keys /
 turn off; fill lead requests from the pool (optionally matching niche & area); import leads by pasting from a spreadsheet;
-bulk assign; edit sales, mark commission paid; edit packages & prices shown on the website.
+bulk assign; record client payments (one client, or a whole month for every active client at once), cancel clients,
+mark commission paid; edit packages & prices shown on the website.
 
 ## Login
 

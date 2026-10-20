@@ -80,17 +80,15 @@ export const OUTCOME_CLASS: Record<Outcome, string> = {
 };
 
 export const SALE_STATUS_LABEL: Record<SaleStatus, string> = {
-  unpaid: 'Awaiting payment',
-  deposit: 'Deposit paid',
-  paid: 'Paid in full',
-  refunded: 'Refunded',
+  pending: 'Awaiting 1st payment',
+  active: 'Active',
+  cancelled: 'Cancelled',
 };
 
 export const SALE_STATUS_CLASS: Record<SaleStatus, string> = {
-  unpaid: 'bg-amber-100 text-amber-800',
-  deposit: 'bg-sky-100 text-sky-800',
-  paid: 'bg-green-100 text-green-800',
-  refunded: 'bg-red-100 text-red-700',
+  pending: 'bg-amber-100 text-amber-800',
+  active: 'bg-green-100 text-green-800',
+  cancelled: 'bg-zinc-200 text-zinc-600',
 };
 
 export const REQUEST_STATUS_CLASS: Record<RequestStatus, string> = {

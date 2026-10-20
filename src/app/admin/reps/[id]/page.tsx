@@ -22,7 +22,7 @@ export default async function RepView({ params, searchParams }: PageProps<'/admi
       <PageHeader title={rep.name} sub={`${rep.commissionPct}% commission · ${rep.active ? 'active' : 'turned off'}`}>
         <div className="flex gap-2">
           <Link href={`/admin/leads?rep=${rep.id}`} className="btn">Their leads</Link>
-          <Link href={`/admin/sales?rep=${rep.id}`} className="btn">Their sales</Link>
+          <Link href={`/admin/sales?rep=${rep.id}`} className="btn">Their clients</Link>
           <Link href="/admin/reps" className="btn">Edit settings</Link>
         </div>
       </PageHeader>

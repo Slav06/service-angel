@@ -15,7 +15,7 @@ export async function Leaderboard({ period, highlight, showMoney = true }: { per
   ]);
   const rows = reps
     .map((r) => ({ ...r, s: stats.get(r.id) }))
-    .filter((r) => r.s && (r.s.calls || r.s.deals))
+    .filter((r) => r.s && (r.s.calls || r.s.deals || r.s.activeClients))
     .sort((a, b) => b.s!.revenue - a.s!.revenue || b.s!.deals - a.s!.deals || b.s!.calls - a.s!.calls);
   if (!rows.length) return <Empty>No activity in this period yet.</Empty>;
   return (
@@ -24,8 +24,9 @@ export async function Leaderboard({ period, highlight, showMoney = true }: { per
         <tr>
           <th>#</th>
           <th>Rep</th>
-          {showMoney && <th className="text-right">Revenue</th>}
-          <th className="text-right">Deals</th>
+          {showMoney && <th className="text-right">Collected</th>}
+          <th className="text-right">New clients</th>
+          <th className="text-right">Active</th>
           <th className="text-right">Calls</th>
           <th className="text-right">Conversations</th>
           <th className="text-right">Appts</th>
@@ -39,6 +40,7 @@ export async function Leaderboard({ period, highlight, showMoney = true }: { per
             <td>{r.name}{r.id === highlight && ' (you)'}</td>
             {showMoney && <td className="text-right tabular-nums">{money(r.s!.revenue)}</td>}
             <td className="text-right tabular-nums">{r.s!.deals}</td>
+            <td className="text-right tabular-nums">{r.s!.activeClients}</td>
             <td className="text-right tabular-nums">{r.s!.calls}</td>
             <td className="text-right tabular-nums">{r.s!.conversations}</td>
             <td className="text-right tabular-nums">{r.s!.appointments}</td>

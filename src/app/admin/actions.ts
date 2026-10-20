@@ -4,7 +4,8 @@ import { and, asc, eq, ilike, inArray, isNull, sql, type SQL } from 'drizzle-orm
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
-import { leadRequests, leads, packages, sales, SALE_STATUSES, users, type SaleStatus } from '@/db/schema';
+import { leadRequests, leads, packages, payments, sales, users } from '@/db/schema';
+import { monthKey, monthLabel, recordPayment } from '@/lib/billing';
 import { findUserByName, requireAdmin, revokeSessions } from '@/lib/auth';
 import { generateKey, hashKey } from '@/lib/auth-key';
 import { cents, id, int, optStr, str } from '@/lib/form';
@@ -235,30 +236,83 @@ export async function closeRequest(f: FormData) {
   refresh();
 }
 
-// ---------- Sales ----------
+// ---------- Clients & payments ----------
+
+// <input type="month"> gives '2026-10' → '2026-10-01'.
+function monthField(f: FormData) {
+  const v = str(f, 'month', 7);
+  return /^\d{4}-\d{2}$/.test(v) ? `${v}-01` : monthKey();
+}
+
+export async function addPayment(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const db = await getDb();
+  const [sale] = await db.select().from(sales).where(eq(sales.id, id(f) ?? 0));
+  if (!sale) return { error: 'Client not found.' };
+  const forMonth = monthField(f);
+  const ok = await recordPayment(sale, { forMonth, amountCents: cents(f, 'amount') ?? undefined });
+  if (!ok) return { error: `${monthLabel(forMonth)} is already recorded for ${sale.clientName}.` };
+  refresh();
+  return { ok: `Recorded ${monthLabel(forMonth)}.` };
+}
+
+// One click per month: every active client that hasn't paid for that month yet.
+export async function addMonthForAll(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const forMonth = monthField(f);
+  const db = await getDb();
+  const due = await db
+    .select()
+    .from(sales)
+    .where(
+      and(
+        eq(sales.status, 'active'),
+        sql`not exists (select 1 from ${payments} where ${payments.saleId} = ${sales.id} and ${payments.forMonth} = ${forMonth} and ${payments.kind} = 'monthly')`,
+      ),
+    );
+  let n = 0;
+  for (const sale of due) if (await recordPayment(sale, { forMonth })) n++;
+  refresh();
+  return n
+    ? { ok: `Recorded ${monthLabel(forMonth)} for ${n} client${n === 1 ? '' : 's'}.` }
+    : { error: `Every active client already has ${monthLabel(forMonth)} recorded.` };
+}
+
+export async function deletePayment(f: FormData) {
+  await requireAdmin();
+  const db = await getDb();
+  await db.delete(payments).where(eq(payments.id, id(f) ?? 0));
+  refresh();
+}
+
+export async function setClientStatus(f: FormData) {
+  await requireAdmin();
+  const db = await getDb();
+  const cancel = str(f, 'to') === 'cancelled';
+  await db
+    .update(sales)
+    .set(cancel ? { status: 'cancelled', cancelledAt: new Date() } : { status: 'active', cancelledAt: null })
+    .where(eq(sales.id, id(f) ?? 0));
+  refresh();
+}
 
 export async function updateSale(_prev: ActionState, f: FormData): Promise<ActionState> {
   await requireAdmin();
   const db = await getDb();
   const [sale] = await db.select().from(sales).where(eq(sales.id, id(f) ?? 0));
-  if (!sale) return { error: 'Sale not found.' };
-  const status = str(f, 'status') as SaleStatus;
-  const priceCents = cents(f, 'price') ?? sale.priceCents;
-  const commissionPct = clampPct(Number(str(f, 'commissionPct') || sale.commissionPct));
+  if (!sale) return { error: 'Client not found.' };
   await db
     .update(sales)
     .set({
-      status: SALE_STATUSES.includes(status) ? status : sale.status,
-      priceCents,
-      commissionPct,
-      commissionCents: Math.round((priceCents * commissionPct) / 100),
-      buildCostCents: cents(f, 'buildCost') ?? sale.buildCostCents,
-      collectedCents: status === 'paid' ? priceCents : Math.min(priceCents, cents(f, 'collected') ?? sale.collectedCents),
+      clientName: str(f, 'clientName', 200) || sale.clientName,
       monthlyCents: cents(f, 'monthly') ?? sale.monthlyCents,
+      priceCents: cents(f, 'setup') ?? sale.priceCents,
+      buildCostCents: cents(f, 'buildCost') ?? sale.buildCostCents,
+      commissionPct: str(f, 'commissionPct') ? clampPct(Number(str(f, 'commissionPct'))) : sale.commissionPct,
     })
     .where(eq(sales.id, sale.id));
   refresh();
-  return { ok: 'Saved.' };
+  return { ok: 'Saved. Changes apply to payments recorded from now on.' };
 }
 
 export async function setCommissionPaid(f: FormData) {
@@ -266,15 +320,15 @@ export async function setCommissionPaid(f: FormData) {
   const db = await getDb();
   const paid = str(f, 'paid') === '1';
   const repId = id(f, 'repId');
-  const saleId = id(f);
-  // One sale, or every unpaid sale for a rep ("pay out everything owed").
-  const where = saleId
-    ? eq(sales.id, saleId)
+  const paymentId = id(f);
+  // One payment, or everything owed to a rep ("pay out everything owed").
+  const where = paymentId
+    ? eq(payments.id, paymentId)
     : repId
-      ? and(eq(sales.repId, repId), isNull(sales.commissionPaidAt), sql`${sales.status} <> 'refunded'`)
+      ? and(eq(payments.repId, repId), isNull(payments.commissionPaidAt))
       : undefined;
   if (!where) return;
-  await db.update(sales).set({ commissionPaidAt: paid ? new Date() : null }).where(where);
+  await db.update(payments).set({ commissionPaidAt: paid ? new Date() : null }).where(where);
   refresh();
 }
 
@@ -290,8 +344,8 @@ export async function deleteSale(f: FormData) {
 export async function savePackage(_prev: ActionState, f: FormData): Promise<ActionState> {
   await requireAdmin();
   const name = str(f, 'name', 60);
-  const priceCents = cents(f, 'price');
-  if (!name || priceCents == null) return { error: 'Name and price are required.' };
+  const priceCents = cents(f, 'price') ?? 0;
+  if (!name) return { error: 'Name is required.' };
   const values = {
     name,
     tagline: optStr(f, 'tagline', 200),

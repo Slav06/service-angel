@@ -128,7 +128,8 @@ export const calls = pgTable(
   (t) => [index('calls_rep_at_idx').on(t.repId, t.at), index('calls_lead_idx').on(t.leadId)],
 );
 
-export const SALE_STATUSES = ['unpaid', 'deposit', 'paid', 'refunded'] as const;
+// A sale is a client on a monthly plan. Revenue and commission come from its payments.
+export const SALE_STATUSES = ['pending', 'active', 'cancelled'] as const;
 export type SaleStatus = (typeof SALE_STATUSES)[number];
 
 export const sales = pgTable(
@@ -142,20 +143,45 @@ export const sales = pgTable(
     packageId: integer('package_id').references(() => packages.id, { onDelete: 'set null' }),
     clientName: text('client_name').notNull(),
     packageName: text('package_name').notNull(),
-    priceCents: integer('price_cents').notNull(),
-    monthlyCents: integer('monthly_cents').notNull().default(0),
+    // One-time setup fee (often $0); collected as the first payment when non-zero.
+    priceCents: integer('price_cents').notNull().default(0),
+    monthlyCents: integer('monthly_cents').notNull(),
     buildCostCents: integer('build_cost_cents').notNull().default(0),
+    // Frozen when the sale is logged; every payment on this client earns the rep this %.
     commissionPct: numeric('commission_pct', { precision: 5, scale: 2, mode: 'number' }).notNull(),
-    commissionCents: integer('commission_cents').notNull(),
-    collectedCents: integer('collected_cents').notNull().default(0),
-    status: text('status').$type<SaleStatus>().notNull().default('unpaid'),
-    commissionPaidAt: ts('commission_paid_at'),
+    status: text('status').$type<SaleStatus>().notNull().default('pending'),
     notes: text('notes'),
     closedAt: ts('closed_at').notNull().defaultNow(),
+    cancelledAt: ts('cancelled_at'),
   },
   (t) => [index('sales_rep_closed_idx').on(t.repId, t.closedAt)],
 );
 export type Sale = typeof sales.$inferSelect;
+
+export const payments = pgTable(
+  'payments',
+  {
+    id: serial('id').primaryKey(),
+    saleId: integer('sale_id')
+      .notNull()
+      .references(() => sales.id, { onDelete: 'cascade' }),
+    repId: integer('rep_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    amountCents: integer('amount_cents').notNull(),
+    commissionCents: integer('commission_cents').notNull(),
+    // First day of the month this payment covers, e.g. 2026-10-01 (setup fees use the sign-up month).
+    forMonth: text('for_month').notNull(),
+    kind: text('kind').$type<'monthly' | 'setup'>().notNull().default('monthly'),
+    paidAt: ts('paid_at').notNull().defaultNow(),
+    commissionPaidAt: ts('commission_paid_at'),
+  },
+  (t) => [
+    index('payments_rep_paid_idx').on(t.repId, t.paidAt),
+    uniqueIndex('payments_sale_month_kind_idx').on(t.saleId, t.forMonth, t.kind),
+  ],
+);
+export type Payment = typeof payments.$inferSelect;
 
 export const REQUEST_STATUSES = ['pending', 'fulfilled', 'partial', 'denied'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];

@@ -26,7 +26,7 @@ const WHY = [
 const FAQ = [
   { q: 'Do I need to provide the content?', a: 'No. We write the copy for you based on your consultation, and you can edit anything before launch.' },
   { q: 'Do I own my website?', a: 'Yes. Your domain and content are yours.' },
-  { q: 'What does the monthly fee cover?', a: 'Hosting, SSL security, backups, software updates and small content changes.' },
+  { q: 'What does the monthly price cover?', a: 'Everything: designing and building your site, hosting, SSL security, backups, updates to your content, and support.' },
   { q: 'Can you redo my existing website?', a: 'Absolutely — many of our clients come to us with an outdated site that needs a refresh.' },
 ];
 
@@ -103,25 +103,34 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
       <section id="pricing" className="bg-zinc-50 py-20">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-center text-3xl font-bold">Simple, upfront pricing</h2>
-          <p className="mt-2 text-center text-zinc-600">One-time build fee plus a small monthly plan for hosting & care.</p>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <p className="mt-2 text-center text-zinc-600">One monthly price. Design, hosting, updates and support all included.</p>
+          <div className={`mx-auto mt-10 grid gap-6 ${pkgs.length === 1 ? 'max-w-md' : pkgs.length === 2 ? 'max-w-3xl md:grid-cols-2' : 'md:grid-cols-3'}`}>
             {pkgs.map((p) => (
               <div
                 key={p.id}
                 className={`relative flex flex-col rounded-2xl border bg-white p-6 ${p.featured ? 'border-brand-600 shadow-xl ring-1 ring-brand-600' : 'border-zinc-200'}`}
               >
-                {p.featured && (
+                {p.featured && pkgs.length > 1 && (
                   <span className="absolute -top-3 left-6 rounded-full bg-brand-600 px-3 py-0.5 text-xs font-semibold text-white">
                     Most popular
                   </span>
                 )}
                 <h3 className="text-lg font-semibold">{p.name}</h3>
                 <p className="mt-1 text-sm text-zinc-600">{p.tagline}</p>
-                <p className="mt-5">
-                  <span className="text-4xl font-bold">{money(p.priceCents)}</span>
-                  <span className="text-zinc-500"> one-time</span>
-                </p>
-                {p.monthlyCents > 0 && <p className="text-sm text-zinc-500">+ {money(p.monthlyCents)}/mo hosting & care</p>}
+                {p.monthlyCents > 0 ? (
+                  <>
+                    <p className="mt-5">
+                      <span className="text-5xl font-bold">{money(p.monthlyCents)}</span>
+                      <span className="text-zinc-500"> /month</span>
+                    </p>
+                    <p className="text-sm text-zinc-500">{p.priceCents > 0 ? `+ ${money(p.priceCents)} one-time setup` : 'No upfront cost'}</p>
+                  </>
+                ) : (
+                  <p className="mt-5">
+                    <span className="text-5xl font-bold">{money(p.priceCents)}</span>
+                    <span className="text-zinc-500"> one-time</span>
+                  </p>
+                )}
                 <ul className="mt-5 flex-1 space-y-2 text-sm">
                   {p.features.map((f) => (
                     <li key={f} className="flex gap-2">
@@ -177,7 +186,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
               </p>
             )}
           </div>
-          <QuoteForm refId={typeof ref === 'string' ? ref : undefined} packages={pkgs.map((p) => p.name)} />
+          <QuoteForm refId={typeof ref === 'string' ? ref : undefined} packages={pkgs.length > 1 ? pkgs.map((p) => p.name) : []} />
         </div>
       </section>
 

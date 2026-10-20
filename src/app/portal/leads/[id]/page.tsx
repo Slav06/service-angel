@@ -89,7 +89,7 @@ export default async function LeadDetail({ params }: PageProps<'/portal/leads/[i
               <p className="h2">Sales</p>
               {leadSales.map((s) => (
                 <p key={s.id} className="mt-2 text-sm">
-                  {s.packageName} — <b>{money(s.priceCents)}</b> on {fmtDate(s.closedAt)}
+                  {s.packageName} — <b>{money(s.monthlyCents)}/mo</b>, signed {fmtDate(s.closedAt)}
                 </p>
               ))}
             </div>
