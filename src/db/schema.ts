@@ -1,0 +1,183 @@
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+
+export type Role = 'admin' | 'rep';
+
+const ts = (name: string) => timestamp(name, { withTimezone: true });
+
+export const users = pgTable(
+  'users',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    role: text('role').$type<Role>().notNull().default('rep'),
+    keyHash: text('key_hash').notNull(),
+    active: boolean('active').notNull().default(true),
+    selfRegistered: boolean('self_registered').notNull().default(false),
+    // Snapshotted onto each sale when it is logged, so changing it never rewrites history.
+    commissionPct: numeric('commission_pct', { precision: 5, scale: 2, mode: 'number' }).notNull().default(20),
+    monthlyGoalCents: integer('monthly_goal_cents').notNull().default(1_000_000),
+    dailyCallGoal: integer('daily_call_goal').notNull().default(60),
+    phone: text('phone'),
+    email: text('email'),
+    lastSeenAt: ts('last_seen_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('users_name_lower_idx').on(sql`lower(${t.name})`)],
+);
+export type User = typeof users.$inferSelect;
+
+export const sessions = pgTable('sessions', {
+  id: serial('id').primaryKey(),
+  tokenHash: text('token_hash').notNull().unique(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+// Failed logins and sign-ups, for throttling guesses against short keys.
+export const authAttempts = pgTable(
+  'auth_attempts',
+  {
+    id: serial('id').primaryKey(),
+    kind: text('kind').$type<'login_fail' | 'register'>().notNull(),
+    name: text('name'),
+    ip: text('ip'),
+    at: ts('at').notNull().defaultNow(),
+  },
+  (t) => [index('auth_attempts_at_idx').on(t.at)],
+);
+
+// The website packages we sell. Price and build cost are copied onto each sale.
+export const packages = pgTable('packages', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  tagline: text('tagline'),
+  priceCents: integer('price_cents').notNull(),
+  monthlyCents: integer('monthly_cents').notNull().default(0),
+  buildCostCents: integer('build_cost_cents').notNull().default(0),
+  features: jsonb('features').$type<string[]>().notNull().default([]),
+  featured: boolean('featured').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  sort: integer('sort').notNull().default(0),
+});
+export type Package = typeof packages.$inferSelect;
+
+export const STAGES = ['new', 'contacted', 'interested', 'proposal', 'won', 'lost'] as const;
+export type Stage = (typeof STAGES)[number];
+
+export const LEAD_SOURCES = ['website', 'referral', 'import', 'rep'] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+
+export const leads = pgTable(
+  'leads',
+  {
+    id: serial('id').primaryKey(),
+    business: text('business').notNull(),
+    contactName: text('contact_name'),
+    phone: text('phone'),
+    email: text('email'),
+    website: text('website'),
+    city: text('city'),
+    niche: text('niche'),
+    message: text('message'),
+    source: text('source').$type<LeadSource>().notNull().default('import'),
+    stage: text('stage').$type<Stage>().notNull().default('new'),
+    repId: integer('rep_id').references(() => users.id, { onDelete: 'set null' }),
+    requestId: integer('request_id'),
+    notes: text('notes'),
+    nextFollowUpAt: ts('next_follow_up_at'),
+    assignedAt: ts('assigned_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('leads_rep_idx').on(t.repId, t.stage), index('leads_unassigned_idx').on(t.repId, t.createdAt)],
+);
+export type Lead = typeof leads.$inferSelect;
+
+export const OUTCOMES = ['no_answer', 'voicemail', 'gatekeeper', 'not_interested', 'callback', 'interested', 'appointment', 'sold'] as const;
+export type Outcome = (typeof OUTCOMES)[number];
+// Outcomes where the rep actually spoke with the decision maker.
+export const CONVERSATION_OUTCOMES: Outcome[] = ['not_interested', 'callback', 'interested', 'appointment', 'sold'];
+
+export const calls = pgTable(
+  'calls',
+  {
+    id: serial('id').primaryKey(),
+    repId: integer('rep_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    leadId: integer('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    outcome: text('outcome').$type<Outcome>().notNull(),
+    minutes: integer('minutes').notNull().default(0),
+    notes: text('notes'),
+    at: ts('at').notNull().defaultNow(),
+  },
+  (t) => [index('calls_rep_at_idx').on(t.repId, t.at), index('calls_lead_idx').on(t.leadId)],
+);
+
+export const SALE_STATUSES = ['unpaid', 'deposit', 'paid', 'refunded'] as const;
+export type SaleStatus = (typeof SALE_STATUSES)[number];
+
+export const sales = pgTable(
+  'sales',
+  {
+    id: serial('id').primaryKey(),
+    repId: integer('rep_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    leadId: integer('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    packageId: integer('package_id').references(() => packages.id, { onDelete: 'set null' }),
+    clientName: text('client_name').notNull(),
+    packageName: text('package_name').notNull(),
+    priceCents: integer('price_cents').notNull(),
+    monthlyCents: integer('monthly_cents').notNull().default(0),
+    buildCostCents: integer('build_cost_cents').notNull().default(0),
+    commissionPct: numeric('commission_pct', { precision: 5, scale: 2, mode: 'number' }).notNull(),
+    commissionCents: integer('commission_cents').notNull(),
+    collectedCents: integer('collected_cents').notNull().default(0),
+    status: text('status').$type<SaleStatus>().notNull().default('unpaid'),
+    commissionPaidAt: ts('commission_paid_at'),
+    notes: text('notes'),
+    closedAt: ts('closed_at').notNull().defaultNow(),
+  },
+  (t) => [index('sales_rep_closed_idx').on(t.repId, t.closedAt)],
+);
+export type Sale = typeof sales.$inferSelect;
+
+export const REQUEST_STATUSES = ['pending', 'fulfilled', 'partial', 'denied'] as const;
+export type RequestStatus = (typeof REQUEST_STATUSES)[number];
+
+export const leadRequests = pgTable(
+  'lead_requests',
+  {
+    id: serial('id').primaryKey(),
+    repId: integer('rep_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    quantity: integer('quantity').notNull(),
+    niche: text('niche'),
+    area: text('area'),
+    urgency: text('urgency').$type<'normal' | 'urgent'>().notNull().default('normal'),
+    notes: text('notes'),
+    status: text('status').$type<RequestStatus>().notNull().default('pending'),
+    deliveredCount: integer('delivered_count').notNull().default(0),
+    adminNote: text('admin_note'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    resolvedAt: ts('resolved_at'),
+  },
+  (t) => [index('lead_requests_status_idx').on(t.status, t.createdAt)],
+);
+export type LeadRequest = typeof leadRequests.$inferSelect;
