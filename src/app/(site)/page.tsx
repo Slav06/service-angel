@@ -62,7 +62,7 @@ const INCLUDED: { icon: IconName; title: string; body: string }[] = [
 ];
 
 const COMPARE = [
-  { label: 'Upfront cost', diy: '$0', agency: 'Thousands of dollars', us: '$0' },
+  { label: 'Setup / design fee', diy: '$0 — you do the work', agency: 'Thousands of dollars', us: '$0 — just your first month' },
   { label: 'Who builds it', diy: 'You', agency: 'A design team', us: 'A design team' },
   { label: 'Copywriting', diy: 'You write it', agency: 'Often extra', us: 'Included' },
   { label: 'Hosting & security', diy: 'Add-on plans', agency: 'Often extra', us: 'Included' },
@@ -78,7 +78,7 @@ const STEPS: { icon: IconName; title: string; when: string; body: string }[] = [
 ];
 
 const FAQ = [
-  { q: 'Is there really no upfront cost?', a: 'Right — the monthly plan covers the design and build of your site, plus hosting, updates and support. No large invoice before you launch.' },
+  { q: 'What do I pay to get started?', a: 'Just your first month, paid when you sign up. There’s no separate setup or design fee — your monthly plan covers the design and build of your site, plus hosting, updates and support.' },
   { q: 'Do I need to write the content or take photos?', a: 'No. We write the copy for you based on your consultation, and can work with photos you already have. You review everything before launch.' },
   { q: 'How long until my website is live?', a: 'Most sites launch within about two weeks of the consultation, depending on how quickly we get your feedback.' },
   { q: 'Can I request changes after launch?', a: 'Yes. Updates to your content — new services, prices, hours, photos — are included in your plan. Just send them over.' },
@@ -167,7 +167,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-brand-100/90">
               {BRAND.name} designs, writes, launches and maintains professional websites for local businesses
-              {monthly ? ` — all for ${monthly} a month, with no upfront cost.` : '.'}
+              {monthly ? ` — all for ${monthly} a month, with no setup or design fee.` : '.'}
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a href="#quote" className="group inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3.5 font-semibold text-brand-900 shadow-lg shadow-brand-900/30 transition hover:bg-brand-50">
@@ -179,7 +179,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
               </a>
             </div>
             <ul className="mt-10 grid max-w-lg gap-3 text-sm text-brand-100 sm:grid-cols-3">
-              {['No upfront cost', 'Hosting & updates included', 'Live in about 2 weeks'].map((t) => (
+              {['No setup fee', 'Hosting & updates included', 'Live in about 2 weeks'].map((t) => (
                 <li key={t} className="flex items-center gap-2">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
                     <Icon name="check" className="h-3 w-3" />
@@ -361,7 +361,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
                         <span className="font-display text-6xl font-extrabold">{money(p.monthlyCents || p.priceCents)}</span>
                         {p.monthlyCents > 0 && <span className="mb-2 text-brand-100">/month</span>}
                       </p>
-                      <p className="mt-2 text-brand-100">{p.monthlyCents > 0 && (p.priceCents > 0 ? `+ ${money(p.priceCents)} one-time setup` : 'No upfront cost. No setup fee.')}</p>
+                      <p className="mt-2 text-brand-100">{p.monthlyCents > 0 && (p.priceCents > 0 ? `+ ${money(p.priceCents)} one-time setup` : 'First month due at signup. No setup fee.')}</p>
                       <p className="mt-6 leading-relaxed text-brand-100/90">{p.tagline}</p>
                       <a href="#quote" className="mt-8 flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3.5 font-semibold text-brand-900 transition hover:bg-brand-50">
                         Get started <Icon name="arrow" className="h-4 w-4" />

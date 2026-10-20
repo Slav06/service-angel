@@ -80,7 +80,7 @@ export function SaleForm({
         <input name="setup" value={setup} onChange={(e) => setSetup(e.target.value)} inputMode="decimal" className="input" />
       </div>
       <label className="flex items-center gap-2 text-sm sm:col-span-2">
-        <input type="checkbox" name="firstPaid" /> The client already paid the first month
+        <input type="checkbox" name="firstPaid" defaultChecked /> The client paid their first month (due at signup)
       </label>
       <div className="sm:col-span-2">
         <label className="label">Notes</label>
