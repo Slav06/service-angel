@@ -14,7 +14,8 @@ export function LoginForm({ notice }: { notice?: string }) {
   const error = state?.error ?? (notice ? NOTICE[notice] : undefined);
   return (
     <form action={action} className="card space-y-3">
-      <h1 className="text-lg font-semibold">Sales rep sign in</h1>
+      <h1 className="text-lg font-semibold">Team sign in</h1>
+      <p className="-mt-1 text-sm text-zinc-500">For the owner and sales reps.</p>
       <div>
         <label className="label">Your name</label>
         <input name="name" defaultValue={state?.name} autoComplete="username" required autoFocus className="input" />

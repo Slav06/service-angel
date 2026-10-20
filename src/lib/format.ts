@@ -91,9 +91,18 @@ export const SALE_STATUS_CLASS: Record<SaleStatus, string> = {
   cancelled: 'bg-zinc-200 text-zinc-600',
 };
 
+export const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
+  pending: 'Waiting for owner',
+  accepted: 'Accepted — in progress',
+  partial: 'Partly delivered',
+  fulfilled: 'Delivered',
+  denied: 'Declined',
+};
+
 export const REQUEST_STATUS_CLASS: Record<RequestStatus, string> = {
   pending: 'bg-amber-100 text-amber-800',
-  partial: 'bg-sky-100 text-sky-800',
+  accepted: 'bg-sky-100 text-sky-800',
+  partial: 'bg-violet-100 text-violet-800',
   fulfilled: 'bg-green-100 text-green-800',
   denied: 'bg-zinc-200 text-zinc-600',
 };

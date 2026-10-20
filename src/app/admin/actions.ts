@@ -2,13 +2,15 @@
 
 import { and, asc, eq, ilike, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
 import { leadRequests, leads, packages, payments, sales, users } from '@/db/schema';
 import { monthKey, monthLabel, recordPayment } from '@/lib/billing';
+import { notify } from '@/lib/notify';
+import { addMessage, describeRequest, isCsvLike, readUpload, requestHref } from '@/lib/requests';
 import { findUserByName, requireAdmin, revokeSessions } from '@/lib/auth';
 import { generateKey, hashKey } from '@/lib/auth-key';
 import { cents, id, int, optStr, str } from '@/lib/form';
+import { insertLeads, MAX_IMPORT, parseLeadTable } from '@/lib/leads-import';
 
 export type ActionState = { ok?: string; error?: string } | null;
 
@@ -81,84 +83,15 @@ const clampPct = (n: number) => (Number.isFinite(n) ? Math.min(100, Math.max(0, 
 
 // ---------- Leads ----------
 
-const HEADER_ALIASES: Record<string, string> = {
-  business: 'business', company: 'business', 'business name': 'business', name: 'business',
-  contact: 'contactName', 'contact name': 'contactName', owner: 'contactName',
-  phone: 'phone', 'phone number': 'phone', tel: 'phone',
-  email: 'email', 'e-mail': 'email',
-  website: 'website', url: 'website', site: 'website',
-  city: 'city', location: 'city', area: 'city',
-  niche: 'niche', category: 'niche', industry: 'niche', type: 'niche',
-};
-const DEFAULT_COLUMNS = ['business', 'contactName', 'phone', 'email', 'city', 'niche', 'website'];
-
-function parseLine(line: string, sep: string) {
-  const out: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (quoted) {
-      if (c === '"' && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else if (c === '"') quoted = false;
-      else cur += c;
-    } else if (c === '"') quoted = true;
-    else if (c === sep) {
-      out.push(cur.trim());
-      cur = '';
-    } else cur += c;
-  }
-  out.push(cur.trim());
-  return out;
-}
-
 // Paste from a spreadsheet (tabs) or a CSV. A header row is detected; otherwise columns are
 // business, contact, phone, email, city, niche, website.
 export async function importLeads(_prev: ActionState, f: FormData): Promise<ActionState> {
   await requireAdmin();
-  const lines = str(f, 'csv', 2_000_000).split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { error: 'Paste some rows first.' };
-  const sep = lines[0].includes('\t') ? '\t' : ',';
-  const first = parseLine(lines[0], sep).map((h) => HEADER_ALIASES[h.toLowerCase()]);
-  const hasHeader = first.filter(Boolean).length >= 2;
-  const columns = hasHeader ? first : DEFAULT_COLUMNS;
+  const rows = parseLeadTable(str(f, 'csv', 2_000_000));
+  if (!rows.length) return { error: 'Paste some rows with a business name first.' };
+  if (rows.length > MAX_IMPORT) return { error: `Import at most ${MAX_IMPORT.toLocaleString()} leads at a time.` };
   const repId = id(f, 'repId');
-  const niche = optStr(f, 'niche', 80);
-  const city = optStr(f, 'city', 80);
-
-  const rows = (hasHeader ? lines.slice(1) : lines)
-    .map((line) => {
-      const cells = parseLine(line, sep);
-      const r: Record<string, string> = {};
-      columns.forEach((c, i) => {
-        if (c && cells[i]) r[c] = cells[i].slice(0, 200);
-      });
-      return r;
-    })
-    .filter((r) => r.business);
-  if (!rows.length) return { error: 'No rows had a business name.' };
-  if (rows.length > 5000) return { error: 'Import at most 5,000 leads at a time.' };
-
-  const db = await getDb();
-  const now = new Date();
-  for (let i = 0; i < rows.length; i += 500) {
-    await db.insert(leads).values(
-      rows.slice(i, i + 500).map((r) => ({
-        business: r.business,
-        contactName: r.contactName || null,
-        phone: r.phone || null,
-        email: r.email || null,
-        website: r.website || null,
-        city: r.city || city,
-        niche: r.niche || niche,
-        source: 'import' as const,
-        repId,
-        assignedAt: repId ? now : null,
-      })),
-    );
-  }
+  await insertLeads(rows, { repId, niche: optStr(f, 'niche', 80), city: optStr(f, 'city', 80) });
   refresh();
   return { ok: `Imported ${rows.length} lead${rows.length === 1 ? '' : 's'}${repId ? ' and assigned them' : ' into the pool'}.` };
 }
@@ -187,14 +120,97 @@ export async function deleteLeads(f: FormData) {
 
 // ---------- Lead requests ----------
 
-// Hand out the oldest unassigned leads that match the request's niche/area.
-export async function fulfillRequest(_prev: ActionState, f: FormData): Promise<ActionState> {
-  await requireAdmin();
+async function loadRequest(f: FormData) {
   const db = await getDb();
   const [req] = await db.select().from(leadRequests).where(eq(leadRequests.id, id(f) ?? 0));
-  if (!req || !['pending', 'partial'].includes(req.status)) return { error: 'Request not found or already closed.' };
+  return req ?? null;
+}
+
+const closed = (status: string) => status === 'fulfilled' || status === 'denied';
+
+export async function acceptRequest(f: FormData) {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || req.status !== 'pending') return;
+  const db = await getDb();
+  await db.update(leadRequests).set({ status: 'accepted' }).where(eq(leadRequests.id, req.id));
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: 'Accepted the request' });
+  await notify([req.repId], { title: `${admin.name} accepted your request for ${describeRequest(req)}`, body: 'Your leads are on the way.', href: requestHref('rep', req.id) });
+  refresh();
+}
+
+export async function declineRequest(f: FormData) {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || closed(req.status)) return;
+  const reason = optStr(f, 'note', 500);
+  const db = await getDb();
+  await db.update(leadRequests).set({ status: 'denied', adminNote: reason, resolvedAt: new Date() }).where(eq(leadRequests.id, req.id));
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: 'Declined the request' });
+  if (reason) await addMessage(req.id, { authorId: admin.id, body: reason });
+  await notify([req.repId], { title: `Your request for ${describeRequest(req)} was declined`, body: reason, href: requestHref('rep', req.id) });
+  refresh();
+}
+
+export async function markDelivered(f: FormData) {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || closed(req.status)) return;
+  const db = await getDb();
+  await db.update(leadRequests).set({ status: 'fulfilled', resolvedAt: new Date() }).where(eq(leadRequests.id, req.id));
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: 'Marked the request as delivered' });
+  await notify([req.repId], { title: `Your request for ${describeRequest(req)} is complete`, href: requestHref('rep', req.id) });
+  refresh();
+}
+
+// A message to the rep, optionally with a document of leads. CSV files can also be loaded straight into their lead list.
+export async function sendToRep(_prev: ActionState, f: FormData): Promise<ActionState> {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req) return { error: 'Request not found.' };
+  const body = optStr(f, 'body', 4000);
+  const upload = await readUpload(f.get('file'));
+  if (upload && 'error' in upload) return { error: upload.error };
+  if (!body && !upload) return { error: 'Write a message or attach a file.' };
+
+  let imported: number | null = null;
+  if (upload && f.get('import') === 'on') {
+    if (!isCsvLike(upload)) return { error: 'Only CSV files can be added to their lead list. Untick that box to just send the file.' };
+    const rows = parseLeadTable(upload.data.toString('utf8'));
+    if (!rows.length) return { error: 'No rows with a business name were found in that CSV.' };
+    if (rows.length > MAX_IMPORT) return { error: `That file has over ${MAX_IMPORT.toLocaleString()} leads — split it up.` };
+    imported = await insertLeads(rows, { repId: req.repId, requestId: req.id, niche: req.niche, city: req.area });
+  }
+
+  await addMessage(req.id, { authorId: admin.id, body, file: upload ? { ...upload, importedCount: imported } : undefined });
+  const delivered = req.deliveredCount + (imported ?? 0);
+  const done = f.get('complete') === 'on' || delivered >= req.quantity;
+  // A message alone doesn't change the status; sending leads moves it forward.
+  const status = done ? 'fulfilled' : delivered ? 'partial' : upload && req.status === 'pending' ? 'accepted' : req.status;
+  if (!closed(req.status)) {
+    const db = await getDb();
+    await db
+      .update(leadRequests)
+      .set({ deliveredCount: delivered, status, resolvedAt: done ? new Date() : null })
+      .where(eq(leadRequests.id, req.id));
+  }
+  await notify([req.repId], {
+    title: upload ? `${admin.name} sent you ${imported ? `${imported} leads` : upload.name}` : `New message from ${admin.name}`,
+    body: body ?? (imported ? 'They’re already in My leads.' : 'Open the request to download it.'),
+    href: requestHref('rep', req.id),
+  });
+  refresh();
+  return { ok: imported ? `Sent — ${imported} leads were added to their list.` : 'Sent.' };
+}
+
+// Hand out the oldest unassigned leads that match the request's niche/area.
+export async function fulfillRequest(_prev: ActionState, f: FormData): Promise<ActionState> {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || closed(req.status)) return { error: 'Request not found or already closed.' };
   const want = Math.max(1, Math.min(int(f, 'count', req.quantity - req.deliveredCount), 500));
   const matchOnly = f.get('match') === 'on';
+  const db = await getDb();
 
   const conds: SQL[] = [isNull(leads.repId)];
   if (matchOnly && req.niche) conds.push(ilike(leads.niche, `%${req.niche}%`));
@@ -212,28 +228,17 @@ export async function fulfillRequest(_prev: ActionState, f: FormData): Promise<A
     .set({ repId: req.repId, requestId: req.id, assignedAt: new Date(), updatedAt: new Date() })
     .where(and(inArray(leads.id, pool.map((p) => p.id)), isNull(leads.repId)));
   const delivered = req.deliveredCount + pool.length;
+  const done = delivered >= req.quantity;
   await db
     .update(leadRequests)
-    .set({
-      deliveredCount: delivered,
-      status: delivered >= req.quantity ? 'fulfilled' : 'partial',
-      adminNote: optStr(f, 'note', 500) ?? req.adminNote,
-      resolvedAt: delivered >= req.quantity ? new Date() : null,
-    })
+    .set({ deliveredCount: delivered, status: done ? 'fulfilled' : 'partial', resolvedAt: done ? new Date() : null })
     .where(eq(leadRequests.id, req.id));
+  const note = optStr(f, 'note', 500);
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: `Added ${pool.length} lead${pool.length === 1 ? '' : 's'} to your list from the lead pool` });
+  if (note) await addMessage(req.id, { authorId: admin.id, body: note });
+  await notify([req.repId], { title: `${admin.name} added ${pool.length} leads to your list`, body: note ?? 'Find them in My leads.', href: requestHref('rep', req.id) });
   refresh();
-  // The request leaves the open list once filled, so confirm on the page itself.
-  redirect(`/admin/requests?assigned=${pool.length}&to=${req.repId}`);
-}
-
-export async function closeRequest(f: FormData) {
-  await requireAdmin();
-  const db = await getDb();
-  await db
-    .update(leadRequests)
-    .set({ status: str(f, 'as') === 'fulfilled' ? 'fulfilled' : 'denied', adminNote: optStr(f, 'note', 500), resolvedAt: new Date() })
-    .where(eq(leadRequests.id, id(f) ?? 0));
-  refresh();
+  return { ok: `Assigned ${pool.length} lead${pool.length === 1 ? '' : 's'} to the rep.` };
 }
 
 // ---------- Clients & payments ----------

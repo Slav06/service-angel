@@ -16,18 +16,26 @@ A rep's referral link (`/?ref=<rep id>`, shown on their Profile page) assigns th
 - My leads with stages, notes, follow-up dates, per-lead call history; add their own leads
 - Record sales. Each sale is a client on a monthly plan; the rep earns their % (frozen on the sale) on **every payment**
   the client makes, for as long as they stay
-- Request leads (quantity, niche, area, urgency) and track the request's status
+- Request leads (quantity, niche, area, urgency). Each request is a conversation with the owner: status steps
+  (Requested → Accepted → Delivered), messages both ways, and file attachments (≤ 4 MB, stored in Postgres)
 - Leaderboard, profile (contact info, change key, referral link)
 
 **Owner admin (`/admin`)** — company revenue collected, monthly recurring revenue, profit (payments − commission − build cost), margin, commissions, cash
 collected, calls and rates, per-rep table; open any rep's dashboard; add reps / set commission % and goals / reset keys /
-turn off; fill lead requests from the pool (optionally matching niche & area); import leads by pasting from a spreadsheet;
+turn off; answer lead requests (accept/decline, chat, send a leads file — a CSV can be loaded straight into the
+rep's list — or assign from the pool, optionally matching niche & area); import leads by pasting from a spreadsheet;
 bulk assign; record client payments (one client, or a whole month for every active client at once), cancel clients,
 mark commission paid; edit packages & prices shown on the website.
 
+## Notifications
+
+A bell in both portals. The owner is notified of new requests and rep replies; reps when a request is accepted,
+declined, answered or delivered. Opening the request marks its notifications read.
+
 ## Login
 
-Name + easy key (a word + 2 digits, e.g. `tiger42`), same as EmployerCRM. Wrong guesses are throttled.
+Name + easy key (a word + 2 digits, e.g. `tiger42`) at `/login` (“Team login” on the site). Admins land on `/admin`,
+reps on `/portal`. Wrong guesses are throttled.
 Reps can sign themselves up at `/join`, or the owner adds them on **Admin → Sales reps**, which shows a one-click
 login link (`/auth?name=…&key=…`).
 

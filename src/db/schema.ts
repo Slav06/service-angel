@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -183,7 +184,7 @@ export const payments = pgTable(
 );
 export type Payment = typeof payments.$inferSelect;
 
-export const REQUEST_STATUSES = ['pending', 'fulfilled', 'partial', 'denied'] as const;
+export const REQUEST_STATUSES = ['pending', 'accepted', 'partial', 'fulfilled', 'denied'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
 export const leadRequests = pgTable(
@@ -203,7 +204,64 @@ export const leadRequests = pgTable(
     adminNote: text('admin_note'),
     createdAt: ts('created_at').notNull().defaultNow(),
     resolvedAt: ts('resolved_at'),
+    lastMessageAt: ts('last_message_at').notNull().defaultNow(),
   },
   (t) => [index('lead_requests_status_idx').on(t.status, t.createdAt)],
 );
 export type LeadRequest = typeof leadRequests.$inferSelect;
+
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  fromDriver: (v) => Buffer.from(v),
+});
+
+// Documents attached to a lead request (e.g. a spreadsheet of leads). Kept in Postgres: they're small (≤ 4 MB).
+export const files = pgTable('files', {
+  id: serial('id').primaryKey(),
+  requestId: integer('request_id')
+    .notNull()
+    .references(() => leadRequests.id, { onDelete: 'cascade' }),
+  uploadedBy: integer('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
+  name: text('name').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  data: bytea('data').notNull(),
+  // Leads created from this file (CSV only), so the rep sees how many landed in their list.
+  importedCount: integer('imported_count'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+export type FileRow = typeof files.$inferSelect;
+
+// The conversation on a lead request: messages from either side plus status events.
+export const requestMessages = pgTable(
+  'request_messages',
+  {
+    id: serial('id').primaryKey(),
+    requestId: integer('request_id')
+      .notNull()
+      .references(() => leadRequests.id, { onDelete: 'cascade' }),
+    authorId: integer('author_id').references(() => users.id, { onDelete: 'set null' }),
+    kind: text('kind').$type<'message' | 'event'>().notNull().default('message'),
+    body: text('body'),
+    fileId: integer('file_id').references(() => files.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('request_messages_request_idx').on(t.requestId, t.createdAt)],
+);
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    body: text('body'),
+    href: text('href'),
+    readAt: ts('read_at'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('notifications_user_idx').on(t.userId, t.readAt, t.createdAt)],
+);
+export type Notification = typeof notifications.$inferSelect;

@@ -4,6 +4,7 @@ import { getDb } from '@/db';
 import { leads } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
 import { dueCutoff } from '@/lib/format';
+import { unreadCount } from '@/lib/notify';
 
 export const metadata = { title: 'Sales portal', robots: { index: false } };
 
@@ -15,9 +16,11 @@ export default async function PortalLayout({ children }: LayoutProps<'/portal'>)
     .from(leads)
     .where(and(eq(leads.repId, user.id), notInArray(leads.stage, ['won', 'lost']), lt(leads.nextFollowUpAt, dueCutoff())));
   const [{ n: fresh }] = await db.select({ n: count() }).from(leads).where(and(eq(leads.repId, user.id), eq(leads.stage, 'new')));
+  const unread = await unreadCount(user.id);
   return (
     <AppShell
       user={user}
+      bell={{ href: '/portal/notifications', count: unread }}
       nav={[
         { href: '/portal', label: 'Dashboard' },
         { href: '/portal/calls', label: 'Log calls' },

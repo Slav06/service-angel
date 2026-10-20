@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { checkLogin, clientIp, createSession } from '@/lib/auth';
 import { normalizeKey } from '@/lib/auth-key';
+import { homeFor } from '@/lib/auth-home';
 
 // One-click login link: /auth?name=Maria&key=tiger42
 export async function GET(req: NextRequest) {
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest) {
   if ('error' in result) {
     return NextResponse.redirect(new URL(`/login?error=${result.error}`, req.url));
   }
-  const res = NextResponse.redirect(new URL('/portal', req.url));
+  const res = NextResponse.redirect(new URL(homeFor(result.user), req.url));
   const c = await createSession(result.user.id);
   res.cookies.set(c.name, c.value, c.options);
   return res;

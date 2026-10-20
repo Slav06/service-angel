@@ -120,6 +120,10 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
             ))}
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <Link href="/login" className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-100 sm:flex">
+              <Icon name="users" className="h-4 w-4" />
+              Team login
+            </Link>
             {BRAND.phone && (
               <a href={`tel:${BRAND.phone}`} className="hidden items-center gap-1.5 text-sm font-semibold text-zinc-700 md:flex">
                 <Icon name="phone" className="h-4 w-4" />
@@ -144,6 +148,9 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
                 <a href="#quote" className="mt-1 block rounded-md bg-brand-600 px-3 py-2 text-center text-sm font-semibold text-white">
                   Get a free quote
                 </a>
+                <Link href="/login" className="mt-1 block rounded-md px-3 py-2 text-center text-sm font-medium text-zinc-600 hover:bg-zinc-50">
+                  Team login
+                </Link>
               </div>
             </details>
           </div>

@@ -5,7 +5,39 @@ import { Logo } from './logo';
 
 export type NavItem = { href: string; label: string; badge?: number };
 
-export function AppShell({ user, nav, switchTo, children }: { user: User; nav: NavItem[]; switchTo?: NavItem; children: React.ReactNode }) {
+function Bell({ href, count, label }: { href: string; count: number; label?: string }) {
+  return (
+    <Link
+      href={href}
+      className={`relative flex items-center gap-2 rounded-full p-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 ${label ? 'rounded-md text-sm text-zinc-700' : ''}`}
+      title="Notifications"
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0" />
+      </svg>
+      {count > 0 && (
+        <span className={`absolute top-0.5 flex h-4 min-w-4 ${label ? 'left-5' : 'right-0'} items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white`}>
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+      {label ?? <span className="sr-only">Notifications</span>}
+    </Link>
+  );
+}
+
+export function AppShell({
+  user,
+  nav,
+  switchTo,
+  bell,
+  children,
+}: {
+  user: User;
+  nav: NavItem[];
+  switchTo?: NavItem;
+  bell: { href: string; count: number };
+  children: React.ReactNode;
+}) {
   return (
     <div className="min-h-screen lg:flex">
       <aside className="border-b border-zinc-200 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-56 lg:shrink-0 lg:border-r lg:border-b-0">
@@ -13,7 +45,10 @@ export function AppShell({ user, nav, switchTo, children }: { user: User; nav: N
           <Link href="/" className="text-sm">
             <Logo />
           </Link>
-          <form action={logout} className="ml-auto lg:hidden">
+          <span className="ml-auto lg:hidden">
+            <Bell {...bell} />
+          </span>
+          <form action={logout} className="lg:hidden">
             <button className="text-xs text-zinc-500 hover:underline">Sign out</button>
           </form>
         </div>
@@ -38,6 +73,9 @@ export function AppShell({ user, nav, switchTo, children }: { user: User; nav: N
           )}
         </nav>
         <div className="hidden px-6 pt-6 text-xs text-zinc-500 lg:block">
+          <div className="-ml-2 mb-3">
+            <Bell {...bell} label="Notifications" />
+          </div>
           <p className="font-medium text-zinc-800">{user.name}</p>
           <p>{user.role === 'admin' ? 'Owner / admin' : 'Sales rep'}</p>
           <form action={logout} className="mt-2">

@@ -7,6 +7,8 @@ import { getDb } from '@/db';
 import { calls, leadRequests, leads, packages, sales, users } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
 import { recordPayment } from '@/lib/billing';
+import { notifyAdmins } from '@/lib/notify';
+import { addMessage, describeRequest, readUpload, requestHref } from '@/lib/requests';
 import { hashKey, isValidKey, KEY_RULE, normalizeKey } from '@/lib/auth-key';
 import { isOutcome, isStage, OUTCOME_STAGE, stageIndex } from '@/lib/format';
 import { cents, date, id, int, optStr, str } from '@/lib/form';
@@ -160,18 +162,47 @@ export async function requestLeads(_prev: ActionState, f: FormData): Promise<Act
     .select({ n: count() })
     .from(leadRequests)
     .where(and(eq(leadRequests.repId, user.id), eq(leadRequests.status, 'pending')));
-  if (n >= 3) return { error: 'You already have 3 open requests — wait for one to be filled.' };
-  await db.insert(leadRequests).values({
-    repId: user.id,
-    quantity,
-    niche: optStr(f, 'niche', 120),
-    area: optStr(f, 'area', 120),
-    urgency: str(f, 'urgency') === 'urgent' ? 'urgent' : 'normal',
-    notes: optStr(f, 'notes', 1000),
+  if (n >= 3) return { error: 'You already have 3 requests waiting — wait for one to be answered.' };
+  const [req] = await db
+    .insert(leadRequests)
+    .values({
+      repId: user.id,
+      quantity,
+      niche: optStr(f, 'niche', 120),
+      area: optStr(f, 'area', 120),
+      urgency: str(f, 'urgency') === 'urgent' ? 'urgent' : 'normal',
+      notes: optStr(f, 'notes', 1000),
+    })
+    .returning();
+  await addMessage(req.id, { authorId: user.id, kind: 'event', body: `Requested ${describeRequest(req)}${req.urgency === 'urgent' ? ' (urgent)' : ''}` });
+  if (req.notes) await addMessage(req.id, { authorId: user.id, body: req.notes });
+  await notifyAdmins({
+    title: `${user.name} requested ${describeRequest(req)}`,
+    body: req.notes ?? (req.urgency === 'urgent' ? 'Marked urgent' : null),
+    href: requestHref('admin', req.id),
   });
   refresh();
   revalidatePath('/admin', 'layout');
-  return { ok: 'Request sent — you’ll see new leads in “My leads” once it’s filled.' };
+  redirect(requestHref('rep', req.id));
+}
+
+export async function replyToRequest(_prev: ActionState, f: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  const db = await getDb();
+  const [req] = await db
+    .select()
+    .from(leadRequests)
+    .where(and(eq(leadRequests.id, id(f) ?? 0), eq(leadRequests.repId, user.id)));
+  if (!req) return { error: 'Request not found.' };
+  const body = optStr(f, 'body', 4000);
+  const file = await readUpload(f.get('file'));
+  if (file && 'error' in file) return { error: file.error };
+  if (!body && !file) return { error: 'Write a message or attach a file.' };
+  await addMessage(req.id, { authorId: user.id, body, file: file ?? undefined });
+  await notifyAdmins({ title: `${user.name} replied about ${describeRequest(req)}`, body: body ?? `Sent ${file!.name}`, href: requestHref('admin', req.id) });
+  refresh();
+  revalidatePath('/admin', 'layout');
+  return { ok: 'Sent.' };
 }
 
 export async function cancelRequest(f: FormData) {
@@ -181,6 +212,7 @@ export async function cancelRequest(f: FormData) {
     .delete(leadRequests)
     .where(and(eq(leadRequests.id, id(f) ?? 0), eq(leadRequests.repId, user.id), eq(leadRequests.status, 'pending')));
   refresh();
+  redirect('/portal/requests');
 }
 
 export async function updateProfile(_prev: ActionState, f: FormData): Promise<ActionState> {

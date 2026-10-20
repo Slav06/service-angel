@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
 import { users } from '@/db/schema';
+import { homeFor } from '@/lib/auth-home';
 import { checkLogin, clientIp, endSession, findUserByName, recordAttempt, signupsBlocked, startSession } from '@/lib/auth';
 import { hashKey, isValidKey, KEY_RULE, normalizeKey } from '@/lib/auth-key';
 
@@ -24,7 +25,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     };
   }
   await startSession(result.user.id);
-  redirect('/portal');
+  redirect(homeFor(result.user));
 }
 
 export async function register(_prev: FormState, formData: FormData): Promise<FormState> {
