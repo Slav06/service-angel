@@ -207,7 +207,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
                 See sample designs
               </a>
             </div>
-            <ul className="mt-10 grid max-w-lg gap-3 text-sm text-brand-100 sm:grid-cols-3">
+            <ul className="mt-10 grid max-w-md gap-3 text-sm text-brand-100 sm:grid-cols-2">
               {['No setup fee', 'No contract — cancel anytime', 'Hosting & updates included', 'Live in about 2 weeks'].map((t) => (
                 <li key={t} className="flex items-center gap-2">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
