@@ -592,9 +592,19 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
           </div>
         </div>
         <div className="border-t border-white/10">
-          <p className="mx-auto max-w-7xl px-4 py-6 text-xs sm:px-6">
-            © {new Date().getFullYear()} {BRAND.name}. All rights reserved.
-          </p>
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-xs sm:px-6">
+            <p>
+              © {new Date().getFullYear()} {BRAND.legalName} · {BRAND.location}. All rights reserved.
+            </p>
+            <p className="flex gap-5">
+              <Link href="/privacy" className="transition hover:text-white">
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="transition hover:text-white">
+                Terms of Service
+              </Link>
+            </p>
+          </div>
         </div>
       </footer>
     </div>

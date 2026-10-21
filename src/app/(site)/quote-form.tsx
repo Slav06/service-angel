@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { requestQuote, type QuoteState } from './actions';
 
@@ -69,6 +70,17 @@ export function QuoteForm({ refId, packages }: { refId?: string; packages: strin
       <button className="rounded-lg bg-brand-600 py-3.5 text-base font-semibold text-white shadow-lg shadow-brand-600/30 transition hover:bg-brand-700 disabled:opacity-60 sm:col-span-2" disabled={pending}>
         {pending ? 'Sending…' : 'Get my free quote →'}
       </button>
+      <p className="text-center text-xs text-zinc-500 sm:col-span-2">
+        By sending this, you agree to our{' '}
+        <Link href="/terms" className="underline hover:text-zinc-800">
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link href="/privacy" className="underline hover:text-zinc-800">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </form>
   );
 }
