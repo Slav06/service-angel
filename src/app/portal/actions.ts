@@ -1,13 +1,16 @@
 'use server';
 
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, isNotNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { redirect } from 'next/navigation';
 import { getDb } from '@/db';
 import { calls, leadRequests, leads, packages, sales, users } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
 import { recordPayment } from '@/lib/billing';
+import { finderConfig, finderReady, kickFinder } from '@/lib/lead-finder';
 import { notifyAdmins } from '@/lib/notify';
+import { origin } from '@/lib/origin';
 import { addMessage, describeRequest, readUpload, requestHref } from '@/lib/requests';
 import { hashKey, isValidKey, KEY_RULE, normalizeKey } from '@/lib/auth-key';
 import { isOutcome, isStage, OUTCOME_STAGE, stageAfterCall } from '@/lib/format';
@@ -173,13 +176,30 @@ export async function recordSale(_prev: ActionState, f: FormData): Promise<Actio
 export async function requestLeads(_prev: ActionState, f: FormData): Promise<ActionState> {
   const user = await requireUser();
   const quantity = int(f, 'quantity');
-  if (quantity < 1 || quantity > 500) return { error: 'Request between 1 and 500 leads.' };
+  const cfg = await finderConfig();
+  const auto = finderReady(cfg);
+  const max = auto ? cfg.maxPerRequest : 500;
+  if (quantity < 1 || quantity > max) return { error: `Request between 1 and ${max} leads.` };
   const db = await getDb();
-  const [{ n }] = await db
-    .select({ n: count() })
-    .from(leadRequests)
-    .where(and(eq(leadRequests.repId, user.id), eq(leadRequests.status, 'pending')));
-  if (n >= 3) return { error: 'You already have 3 requests waiting — wait for one to be answered.' };
+  if (auto) {
+    const [{ active, today }] = await db
+      .select({
+        active: sql<number>`(count(*) filter (where ${leadRequests.finderStatus} in ('queued', 'running')))::int`,
+        today: sql<number>`coalesce(sum(${leadRequests.quantity}) filter (where ${leadRequests.createdAt} > now() - interval '1 day'), 0)::int`,
+      })
+      .from(leadRequests)
+      .where(and(eq(leadRequests.repId, user.id), isNotNull(leadRequests.finderStatus)));
+    if (active >= 2) return { error: 'Claude is still working on 2 of your requests — wait for one to finish.' };
+    if (today + quantity > cfg.dailyCap) {
+      return { error: `You can get up to ${cfg.dailyCap} leads a day; ${Math.max(0, cfg.dailyCap - today)} left today.` };
+    }
+  } else {
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(leadRequests)
+      .where(and(eq(leadRequests.repId, user.id), eq(leadRequests.status, 'pending')));
+    if (n >= 3) return { error: 'You already have 3 requests waiting — wait for one to be answered.' };
+  }
   const [req] = await db
     .insert(leadRequests)
     .values({
@@ -189,12 +209,18 @@ export async function requestLeads(_prev: ActionState, f: FormData): Promise<Act
       area: optStr(f, 'area', 120),
       urgency: str(f, 'urgency') === 'urgent' ? 'urgent' : 'normal',
       notes: optStr(f, 'notes', 1000),
+      ...(auto && { status: 'accepted' as const, finderStatus: 'queued' as const }),
     })
     .returning();
   await addMessage(req.id, { authorId: user.id, kind: 'event', body: `Requested ${describeRequest(req)}${req.urgency === 'urgent' ? ' (urgent)' : ''}` });
   if (req.notes) await addMessage(req.id, { authorId: user.id, body: req.notes });
+  if (auto) {
+    await addMessage(req.id, { authorId: null, kind: 'event', body: 'is searching for businesses that fit — this usually takes a few minutes' });
+    const base = await origin();
+    after(() => kickFinder(base, req.id));
+  }
   await notifyAdmins({
-    title: `${user.name} requested ${describeRequest(req)}`,
+    title: `${user.name} requested ${describeRequest(req)}${auto ? ' — Claude is on it' : ''}`,
     body: req.notes ?? (req.urgency === 'urgent' ? 'Marked urgent' : null),
     href: requestHref('admin', req.id),
   });

@@ -55,7 +55,26 @@ export default async function LeadDetail({ params }: PageProps<'/portal/leads/[i
         </div>
       </PageHeader>
 
-      {lead.message && (
+      {lead.source === 'finder' && (
+        <div className="card mb-4 border-brand-200 bg-brand-50/50 text-sm">
+          <p className="mb-1 font-medium text-brand-800">✨ Why Claude picked this lead</p>
+          {lead.message && <p className="whitespace-pre-wrap text-zinc-700">{lead.message}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {lead.mapsUrl && (
+              <a href={lead.mapsUrl} target="_blank" rel="noreferrer" className="btn btn-sm">
+                See them on Google Maps ↗
+              </a>
+            )}
+            {lead.website && /^https?:\/\//i.test(lead.website) && (
+              <a href={lead.website} target="_blank" rel="noreferrer" className="btn btn-sm">
+                Their current page ↗
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {lead.message && lead.source !== 'finder' && (
         <div className="card mb-4 border-pink-200 bg-pink-50 text-sm">
           <p className="mb-1 font-medium text-pink-800">Message from their quote request</p>
           <p className="whitespace-pre-wrap text-zinc-700">{lead.message}</p>

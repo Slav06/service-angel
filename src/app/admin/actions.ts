@@ -2,10 +2,14 @@
 
 import { and, asc, eq, ilike, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
 import { getDb } from '@/db';
 import { leadRequests, leads, packages, payments, sales, users } from '@/db/schema';
 import { monthKey, monthLabel, recordPayment } from '@/lib/billing';
 import { dialerrApi, setSetting, SETTING } from '@/lib/dialerr';
+import { DEFAULT_COUNTRIES, FINDER, kickFinder, queueFinder, saveFinderKey, testOutscraperKey } from '@/lib/lead-finder';
+import { origin } from '@/lib/origin';
 import { notify } from '@/lib/notify';
 import { addMessage, describeRequest, isCsvLike, readUpload, requestHref } from '@/lib/requests';
 import { findUserByName, requireAdmin, revokeSessions } from '@/lib/auth';
@@ -404,5 +408,72 @@ export async function saveDialerrToken(_prev: ActionState, f: FormData): Promise
 export async function clearDialerrToken() {
   await requireAdmin();
   await setSetting(SETTING.apiToken, null);
+  refresh();
+}
+
+// ---------- Lead finder ----------
+
+// Hand a request to Claude (or retry one that stopped).
+export async function findWithClaude(f: FormData) {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || closed(req.status) || req.finderStatus === 'queued' || req.finderStatus === 'running') return;
+  await queueFinder(req.id);
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: req.finderStatus ? 'Restarted the lead finder' : 'Asked Claude to find these leads' });
+  const base = await origin();
+  after(() => kickFinder(base, req.id));
+  refresh();
+}
+
+export async function stopFinder(f: FormData) {
+  const admin = await requireAdmin();
+  const req = await loadRequest(f);
+  if (!req || (req.finderStatus !== 'queued' && req.finderStatus !== 'running')) return;
+  const db = await getDb();
+  await db.update(leadRequests).set({ finderStatus: 'stopped' }).where(eq(leadRequests.id, req.id));
+  await addMessage(req.id, { authorId: admin.id, kind: 'event', body: `Stopped the lead finder at ${req.deliveredCount} of ${req.quantity}` });
+  refresh();
+}
+
+export async function saveFinderSettings(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const countries = str(f, 'countries', 200)
+    .toUpperCase()
+    .split(/[\s,]+/)
+    .filter((c) => /^[A-Z]{2}$/.test(c));
+  await Promise.all([
+    setSetting(FINDER.enabled, f.get('enabled') === 'on' ? '1' : '0'),
+    setSetting(FINDER.maxReviews, String(Math.max(0, Math.min(500, int(f, 'maxReviews', 15))))),
+    setSetting(FINDER.maxPerRequest, String(Math.max(1, Math.min(500, int(f, 'maxPerRequest', 50))))),
+    setSetting(FINDER.dailyCap, String(Math.max(1, Math.min(5000, int(f, 'dailyCap', 100))))),
+    setSetting(FINDER.countries, (countries.length ? countries : DEFAULT_COUNTRIES).join(',')),
+  ]);
+  refresh();
+  return { ok: 'Saved.' };
+}
+
+export async function saveFinderKeyAction(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const which = str(f, 'which') === 'outscraper' ? 'outscraperKey' : 'anthropicKey';
+  const key = str(f, 'key', 300);
+  if (!key) return { error: 'Paste the key first.' };
+  if (which === 'anthropicKey') {
+    if (!key.startsWith('sk-ant-')) return { error: 'A Claude API key starts with “sk-ant-”.' };
+    const ok = await new Anthropic({ apiKey: key, maxRetries: 0 }).models
+      .retrieve('claude-opus-5-5')
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return { error: 'Anthropic didn’t accept that key. Check it was copied in full and the account has credit.' };
+  } else if (!(await testOutscraperKey(key))) {
+    return { error: 'Outscraper didn’t accept that key.' };
+  }
+  await saveFinderKey(which, key);
+  refresh();
+  return { ok: 'Connected.' };
+}
+
+export async function clearFinderKey(f: FormData) {
+  await requireAdmin();
+  await saveFinderKey(str(f, 'which') === 'outscraper' ? 'outscraperKey' : 'anthropicKey', null);
   refresh();
 }

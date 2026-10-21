@@ -1,9 +1,11 @@
 import { and, eq } from 'drizzle-orm';
 import Link from 'next/link';
+import { after } from 'next/server';
 import { notFound } from 'next/navigation';
 import { cancelRequest, replyToRequest } from '@/app/portal/actions';
 import { ConfirmButton } from '@/components/action-form';
 import { Composer } from '@/components/composer';
+import { FinderProgress } from '@/components/finder-progress';
 import { RequestSteps } from '@/components/request-steps';
 import { Thread } from '@/components/thread';
 import { Badge } from '@/components/ui';
@@ -11,7 +13,9 @@ import { getDb } from '@/db';
 import { leadRequests } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
 import { REQUEST_STATUS_CLASS, REQUEST_STATUS_LABEL } from '@/lib/format';
+import { isStale, kickFinder } from '@/lib/lead-finder';
 import { markReadFor } from '@/lib/notify';
+import { origin } from '@/lib/origin';
 import { describeRequest, loadThread, requestHref } from '@/lib/requests';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +28,11 @@ export default async function RepRequest({ params }: PageProps<'/portal/requests
     .from(leadRequests)
     .where(and(eq(leadRequests.id, Number((await params).id) || 0), eq(leadRequests.repId, user.id)));
   if (!req) notFound();
+  // A finder run that died (e.g. a deploy mid-run) picks up again when someone looks at it.
+  if (isStale(req)) {
+    const base = await origin();
+    after(() => kickFinder(base, req.id));
+  }
   await markReadFor(user.id, requestHref('rep', req.id));
   const items = await loadThread(req.id);
 
@@ -42,6 +51,8 @@ export default async function RepRequest({ params }: PageProps<'/portal/requests
         </div>
         <RequestSteps status={req.status} />
       </div>
+
+      <FinderProgress req={req} />
 
       {req.deliveredCount > 0 && (
         <Link href="/portal/leads?stage=new" className="card mt-4 flex items-center justify-between border-green-200 bg-green-50 text-sm text-green-800 hover:bg-green-100">

@@ -78,6 +78,8 @@ export default async function MyLeads({ searchParams }: PageProps<'/portal/leads
                     </Link>
                     {l.source === 'website' || l.source === 'referral' ? (
                       <Badge className="ml-1.5 bg-pink-100 text-pink-700">{l.source === 'referral' ? 'Your referral' : 'Inbound'}</Badge>
+                    ) : l.source === 'finder' ? (
+                      <Badge className="ml-1.5 bg-brand-50 text-brand-700">✨ Claude</Badge>
                     ) : null}
                   </td>
                   <td>{l.contactName}</td>

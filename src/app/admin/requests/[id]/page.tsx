@@ -1,9 +1,11 @@
 import { and, count, eq, isNull, notInArray } from 'drizzle-orm';
 import Link from 'next/link';
+import { after } from 'next/server';
 import { notFound } from 'next/navigation';
 import { acceptRequest, declineRequest, fulfillRequest, markDelivered, sendToRep } from '@/app/admin/actions';
 import { ActionForm, ConfirmButton, Submit } from '@/components/action-form';
 import { Composer } from '@/components/composer';
+import { FinderProgress } from '@/components/finder-progress';
 import { RequestSteps } from '@/components/request-steps';
 import { Thread } from '@/components/thread';
 import { Badge, Stat } from '@/components/ui';
@@ -11,7 +13,9 @@ import { getDb } from '@/db';
 import { leadRequests, leads, users } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth';
 import { ago, pct, REQUEST_STATUS_CLASS, REQUEST_STATUS_LABEL } from '@/lib/format';
+import { isStale, kickFinder } from '@/lib/lead-finder';
 import { markReadFor } from '@/lib/notify';
+import { origin } from '@/lib/origin';
 import { describeRequest, loadThread, requestHref } from '@/lib/requests';
 import { statsFor } from '@/lib/stats';
 
@@ -27,6 +31,11 @@ export default async function AdminRequest({ params }: PageProps<'/admin/request
     .where(eq(leadRequests.id, Number((await params).id) || 0));
   if (!row) notFound();
   const { r: req, rep } = row;
+  // A finder run that died (e.g. a deploy mid-run) picks up again when someone looks at it.
+  if (isStale(req)) {
+    const base = await origin();
+    after(() => kickFinder(base, req.id));
+  }
   await markReadFor(admin.id, requestHref('admin', req.id));
   const [items, month, [{ n: openLeads }], [{ n: pool }]] = await Promise.all([
     loadThread(req.id),
@@ -78,6 +87,8 @@ export default async function AdminRequest({ params }: PageProps<'/admin/request
             </form>
           </div>
         )}
+
+        <FinderProgress req={req} owner />
 
         <div className="card mt-4 bg-zinc-50/60">
           <Thread items={items} me={admin} />

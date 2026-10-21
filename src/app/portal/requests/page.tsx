@@ -7,6 +7,7 @@ import { getDb } from '@/db';
 import { leadRequests, notifications } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
 import { ago, REQUEST_STATUS_CLASS, REQUEST_STATUS_LABEL } from '@/lib/format';
+import { finderConfig, finderReady } from '@/lib/lead-finder';
 import { describeRequest } from '@/lib/requests';
 
 export const dynamic = 'force-dynamic';
@@ -22,15 +23,24 @@ export default async function Requests() {
     .from(leadRequests)
     .where(eq(leadRequests.repId, user.id))
     .orderBy(desc(leadRequests.lastMessageAt));
+  const cfg = await finderConfig();
+  const auto = finderReady(cfg);
   return (
     <>
-      <PageHeader title="Request leads" sub="Ask the owner for more leads. You’ll get a notification when they answer — and can chat about it in the request." />
+      <PageHeader
+        title="Request leads"
+        sub={
+          auto
+            ? 'Claude finds owner-run businesses with no website and few reviews — usually in a few minutes. Every lead is brand new: nobody else has been given it.'
+            : 'Ask the owner for more leads. You’ll get a notification when they answer — and can chat about it in the request.'
+        }
+      />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
         <ActionForm action={requestLeads} className="card h-fit space-y-3">
           <p className="h2">New request</p>
           <div>
             <label className="label">How many leads?</label>
-            <input name="quantity" type="number" min={1} max={500} defaultValue={50} required className="input" />
+            <input name="quantity" type="number" min={1} max={auto ? cfg.maxPerRequest : 500} defaultValue={auto ? Math.min(20, cfg.maxPerRequest) : 50} required className="input" />
           </div>
           <div>
             <label className="label">Type of business (optional)</label>
@@ -38,7 +48,7 @@ export default async function Requests() {
           </div>
           <div>
             <label className="label">Area (optional)</label>
-            <input name="area" placeholder="e.g. Miami, Broward County" className="input" />
+            <input name="area" placeholder={auto ? 'e.g. Tulsa OK, Manchester UK — blank for anywhere' : 'e.g. Miami, Broward County'} className="input" />
           </div>
           <div>
             <label className="label">How soon?</label>
@@ -48,8 +58,8 @@ export default async function Requests() {
             </select>
           </div>
           <div>
-            <label className="label">Message to the owner (optional)</label>
-            <textarea name="notes" rows={2} className="input" />
+            <label className="label">{auto ? 'Anything else Claude should know? (optional)' : 'Message to the owner (optional)'}</label>
+            <textarea name="notes" rows={2} className="input" placeholder={auto ? 'e.g. mobile businesses only, owners who speak Spanish' : undefined} />
           </div>
           <Submit className="btn btn-primary w-full">Send request</Submit>
         </ActionForm>

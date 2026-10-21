@@ -5,6 +5,7 @@ import type { ThreadItem } from '@/lib/requests';
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 // The request conversation, chat-style: my messages on the right, theirs on the left, status events centered.
+// Events with no author come from the Claude lead finder.
 export function Thread({ items, me }: { items: ThreadItem[]; me: User }) {
   return (
     <ol className="space-y-4">
@@ -14,7 +15,7 @@ export function Thread({ items, me }: { items: ThreadItem[]; me: User }) {
             <li key={m.id} className="flex items-center gap-3 text-xs text-zinc-500">
               <span className="h-px flex-1 bg-zinc-200" />
               <span>
-                <b className="font-medium text-zinc-700">{m.authorId === me.id ? 'You' : (m.authorName ?? 'Someone')}</b> {lower(m.body)} · {fmtDate(m.createdAt, true)}
+                <b className="font-medium text-zinc-700">{m.authorId === me.id ? 'You' : (m.authorName ?? 'Claude')}</b> {lower(m.body)} · {fmtDate(m.createdAt, true)}
               </span>
               <span className="h-px flex-1 bg-zinc-200" />
             </li>

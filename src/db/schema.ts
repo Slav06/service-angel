@@ -81,7 +81,8 @@ export type Package = typeof packages.$inferSelect;
 export const STAGES = ['new', 'contacted', 'interested', 'proposal', 'won', 'lost'] as const;
 export type Stage = (typeof STAGES)[number];
 
-export const LEAD_SOURCES = ['website', 'referral', 'import', 'rep'] as const;
+// 'finder': found by the Claude lead finder for a rep's request.
+export const LEAD_SOURCES = ['website', 'referral', 'import', 'rep', 'finder'] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
 export const leads = pgTable(
@@ -93,6 +94,7 @@ export const leads = pgTable(
     phone: text('phone'),
     email: text('email'),
     website: text('website'),
+    mapsUrl: text('maps_url'), // Google Maps listing (lead finder)
     city: text('city'),
     niche: text('niche'),
     message: text('message'),
@@ -228,6 +230,9 @@ export const payments = pgTable(
 );
 export type Payment = typeof payments.$inferSelect;
 
+export const FINDER_STATUSES = ['queued', 'running', 'done', 'failed', 'stopped'] as const;
+export type FinderStatus = (typeof FINDER_STATUSES)[number];
+
 export const REQUEST_STATUSES = ['pending', 'accepted', 'partial', 'fulfilled', 'denied'] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
@@ -249,6 +254,13 @@ export const leadRequests = pgTable(
     createdAt: ts('created_at').notNull().defaultNow(),
     resolvedAt: ts('resolved_at'),
     lastMessageAt: ts('last_message_at').notNull().defaultNow(),
+    // The Claude lead finder working on this request (null = handled by hand).
+    finderStatus: text('finder_status').$type<FinderStatus>(),
+    finderRounds: integer('finder_rounds').notNull().default(0),
+    finderScanned: integer('finder_scanned').notNull().default(0), // businesses looked at
+    finderQueries: jsonb('finder_queries').$type<string[]>().notNull().default([]),
+    finderError: text('finder_error'),
+    finderBeatAt: ts('finder_beat_at'), // last sign of life, to restart a run that died
   },
   (t) => [index('lead_requests_status_idx').on(t.status, t.createdAt)],
 );
@@ -309,3 +321,21 @@ export const notifications = pgTable(
   (t) => [index('notifications_user_idx').on(t.userId, t.readAt, t.createdAt)],
 );
 export type Notification = typeof notifications.$inferSelect;
+
+// Every business the lead finder has ever handed out, kept forever (even if the lead is deleted)
+// so no business is ever given to a second rep.
+export const finderPlaces = pgTable(
+  'finder_places',
+  {
+    id: serial('id').primaryKey(),
+    placeId: text('place_id').notNull(), // Google Maps place id
+    phone: text('phone'), // last 10 digits
+    name: text('name').notNull(),
+    country: text('country'),
+    leadId: integer('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    repId: integer('rep_id').references(() => users.id, { onDelete: 'set null' }),
+    requestId: integer('request_id').references(() => leadRequests.id, { onDelete: 'set null' }),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('finder_places_place_idx').on(t.placeId), uniqueIndex('finder_places_phone_idx').on(t.phone)],
+);
