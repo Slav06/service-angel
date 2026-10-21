@@ -3,7 +3,7 @@ export const BRAND = {
   name: 'Service Angel',
   tagline: 'Websites that bring local businesses more customers.',
   phone: process.env.NEXT_PUBLIC_BRAND_PHONE ?? '',
-  email: process.env.NEXT_PUBLIC_BRAND_EMAIL ?? '',
+  email: process.env.NEXT_PUBLIC_BRAND_EMAIL ?? 'serviceangelhelp@gmail.com',
 };
 
 // Stats are bucketed by day/week/month in the business's own time zone.

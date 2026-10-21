@@ -87,7 +87,7 @@ const FAQ = [
   { q: 'I already have a website. Can you redo it?', a: 'Absolutely. Many clients come to us with an outdated or slow site that needs a fresh, modern rebuild.' },
 ];
 
-function SectionHeading({ eyebrow, title, sub, center = true }: { eyebrow: string; title: string; sub?: string; center?: boolean }) {
+function SectionHeading({ eyebrow, title, sub, center = true }: { eyebrow: string; title: string; sub?: React.ReactNode; center?: boolean }) {
   return (
     <div className={center ? 'mx-auto max-w-2xl text-center' : 'max-w-xl'}>
       <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">{eyebrow}</p>
@@ -124,11 +124,18 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
               <Icon name="users" className="h-4 w-4" />
               Team login
             </Link>
-            {BRAND.phone && (
+            {BRAND.phone ? (
               <a href={`tel:${BRAND.phone}`} className="hidden items-center gap-1.5 text-sm font-semibold text-zinc-700 md:flex">
                 <Icon name="phone" className="h-4 w-4" />
                 {BRAND.phone}
               </a>
+            ) : (
+              BRAND.email && (
+                <a href={`mailto:${BRAND.email}`} title={BRAND.email} className="hidden items-center gap-1.5 text-sm font-semibold text-zinc-700 md:flex">
+                  <Icon name="mail" className="h-4 w-4" />
+                  Email us
+                </a>
+              )
             )}
             <a href="#quote" className="hidden rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 sm:inline-block">
               Get a free quote
@@ -145,6 +152,11 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
                     {n.label}
                   </a>
                 ))}
+                {BRAND.email && (
+                  <a href={`mailto:${BRAND.email}`} className="block rounded-md px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                    Email us
+                  </a>
+                )}
                 <a href="#quote" className="mt-1 block rounded-md bg-brand-600 px-3 py-2 text-center text-sm font-semibold text-white">
                   Get a free quote
                 </a>
@@ -464,7 +476,16 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
       <section id="faq" className="scroll-mt-20 py-24">
         <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <SectionHeading center={false} eyebrow="FAQ" title="Questions? We’ve got answers." sub="Can’t find what you’re looking for? Request a free quote and we’ll walk you through everything." />
+            <SectionHeading center={false} eyebrow="FAQ" title="Questions? We’ve got answers." sub={
+                <>
+                  Can’t find what you’re looking for? Request a free quote, or email us at{' '}
+                  <a href={`mailto:${BRAND.email}`} className="font-semibold text-brand-700 hover:underline">
+                    {BRAND.email}
+                  </a>
+                  .
+                </>
+              }
+            />
           </div>
           <div className="divide-y divide-zinc-200 border-y border-zinc-200">
             {FAQ.map((f) => (
