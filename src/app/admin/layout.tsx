@@ -1,5 +1,6 @@
 import { and, count, eq, isNull } from 'drizzle-orm';
 import { AppShell } from '@/components/app-shell';
+import { DialerPanel } from '@/components/dialer-panel';
 import { getDb } from '@/db';
 import { leadRequests, leads } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth';
@@ -19,6 +20,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
     <AppShell
       user={user}
       bell={{ href: '/admin/notifications', count: unread }}
+      aside={<DialerPanel />}
       nav={[
         { href: '/admin', label: 'Company overview' },
         { href: '/admin/reps', label: 'Sales reps' },

@@ -30,12 +30,14 @@ export function AppShell({
   nav,
   switchTo,
   bell,
+  aside,
   children,
 }: {
   user: User;
   nav: NavItem[];
   switchTo?: NavItem;
   bell: { href: string; count: number };
+  aside?: React.ReactNode; // right-hand panel (the owner's Dialerr)
   children: React.ReactNode;
 }) {
   return (
@@ -84,6 +86,7 @@ export function AppShell({
         </div>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 lg:px-8">{children}</main>
+      {aside}
     </div>
   );
 }
