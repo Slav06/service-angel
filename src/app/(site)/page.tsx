@@ -69,6 +69,7 @@ const COMPARE = [
   { label: 'Hosting & security', diy: 'Add-on plans', agency: 'Often extra', us: 'Included' },
   { label: 'Ongoing updates', diy: 'Your time', agency: 'Billed hourly', us: 'Included' },
   { label: 'Local SEO setup', diy: 'DIY', agency: 'Often extra', us: 'Included' },
+  { label: 'Contract', diy: 'Monthly or yearly plans', agency: 'Project contract', us: 'None — month-to-month' },
 ];
 
 const STEPS: { icon: IconName; title: string; when: string; body: string }[] = [
@@ -83,7 +84,15 @@ const FAQ = [
   { q: 'Do I need to write the content or take photos?', a: 'No. We write the copy for you based on your consultation, and can work with photos you already have. You review everything before launch.' },
   { q: 'How long until my website is live?', a: 'Most sites launch within about two weeks of the consultation, depending on how quickly we get your feedback.' },
   { q: 'Can I request changes after launch?', a: 'Yes. Updates to your content — new services, prices, hours, photos — are included in your plan. Just send them over.' },
-  { q: 'Do I own my domain?', a: 'Yes. Your domain name and your business content are yours.' },
+  { q: 'Is there a contract?', a: 'No. Your plan is month-to-month — stay because it’s working for you, not because you’re locked in.' },
+  {
+    q: 'How do I cancel?',
+    a: `Email us at ${BRAND.email} any time before your next billing date and you won’t be charged again. Your site stays live until the end of the month you’ve already paid for.`,
+  },
+  {
+    q: 'What happens to my domain and content if I cancel?',
+    a: 'They’re yours to keep. While you’re with us we register and manage your domain under Service Angel; if you cancel, we transfer it to you free of charge, along with your text and photos. The site’s design and hosting end with your plan.',
+  },
   { q: 'I already have a website. Can you redo it?', a: 'Absolutely. Many clients come to us with an outdated or slow site that needs a fresh, modern rebuild.' },
 ];
 
@@ -199,7 +208,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
               </a>
             </div>
             <ul className="mt-10 grid max-w-lg gap-3 text-sm text-brand-100 sm:grid-cols-3">
-              {['No setup fee', 'Hosting & updates included', 'Live in about 2 weeks'].map((t) => (
+              {['No setup fee', 'No contract — cancel anytime', 'Hosting & updates included', 'Live in about 2 weeks'].map((t) => (
                 <li key={t} className="flex items-center gap-2">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
                     <Icon name="check" className="h-3 w-3" />
@@ -398,7 +407,7 @@ export default async function Home({ searchParams }: PageProps<'/'>) {
                         <span className="font-display text-6xl font-extrabold">{money(p.monthlyCents || p.priceCents)}</span>
                         {p.monthlyCents > 0 && <span className="mb-2 text-brand-100">/month</span>}
                       </p>
-                      <p className="mt-2 text-brand-100">{p.monthlyCents > 0 && (p.priceCents > 0 ? `+ ${money(p.priceCents)} one-time setup` : 'First month due at signup. No setup fee.')}</p>
+                      <p className="mt-2 text-brand-100">{p.monthlyCents > 0 && (p.priceCents > 0 ? `+ ${money(p.priceCents)} one-time setup` : 'First month due at signup. No setup fee. No contract — cancel anytime.')}</p>
                       <p className="mt-6 leading-relaxed text-brand-100/90">{p.tagline}</p>
                       <a href="#quote" className="mt-8 flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3.5 font-semibold text-brand-900 transition hover:bg-brand-50">
                         Get started <Icon name="arrow" className="h-4 w-4" />
