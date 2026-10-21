@@ -37,7 +37,7 @@ export function AppShell({
   nav: NavItem[];
   switchTo?: NavItem;
   bell: { href: string; count: number };
-  aside?: React.ReactNode; // right-hand panel (the owner's Dialerr)
+  aside?: React.ReactNode; // right-hand panel (the Dialerr dialer)
   children: React.ReactNode;
 }) {
   return (
@@ -66,12 +66,13 @@ export function AppShell({
             </Link>
           ))}
           {switchTo && (
-            <Link
+            // A full page load: the Dialerr embed loads once per page, so the other layout's panel slot needs a fresh one.
+            <a
               href={switchTo.href}
               className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50 lg:mt-4"
             >
               {switchTo.label} →
-            </Link>
+            </a>
           )}
         </nav>
         <div className="hidden px-6 pt-6 text-xs text-zinc-500 lg:block">

@@ -8,11 +8,23 @@ const EMBED_SRC = 'https://dialerr.com/embed.js';
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_DIALERR_KEY;
 const KEY = 'sa:dialer-open';
 
-// Dialerr's inline embed (https://dialerr.com/llms.txt), docked on the right of the owner admin, signed into
-// the owner's Dialerr account. It lives in the admin layout, so the slot stays mounted
-// (and a call keeps going) while you move between pages. One slot serves both layouts: a docked column on wide
-// screens, a full-screen sheet behind a floating button on smaller ones.
-export function DialerPanel() {
+// Call events we log for the stats (see /api/dialerr/events).
+const TRACKED = ['call_connected', 'call_ended', 'missed_call', 'voicemail'];
+// Fired by <CallButton> to bring the panel into view before it dials.
+export const OPEN_EVENT = 'sa:dialer-open';
+
+declare global {
+  interface Window {
+    Dialerr?: { startCall(phone: string, leadName?: string): void };
+  }
+}
+
+// Dialerr's inline embed (https://dialerr.com/llms.txt), docked on the right of the admin and the rep portal.
+// signIn: sign in automatically as this person's Dialerr agent; otherwise they sign in inside the panel.
+// It lives in the layout, so the slot stays mounted (and a call keeps going) while you move between pages.
+// One slot serves both layouts: a docked column on wide screens, a full-screen sheet behind a floating button
+// on smaller ones.
+export function DialerPanel({ signIn }: { signIn: boolean }) {
   const [open, setOpen] = useState(true); // wide screens: expanded vs collapsed to a tab
   const [sheet, setSheet] = useState(false); // small screens: sheet shown
 
@@ -23,11 +35,34 @@ export function DialerPanel() {
     tag.src = EMBED_SRC;
     tag.dataset.mode = 'inline';
     tag.dataset.target = '#dialerr';
-    if (PUBLIC_KEY) {
+    if (PUBLIC_KEY && signIn) {
       tag.dataset.key = PUBLIC_KEY;
       tag.dataset.tokenUrl = '/api/dialerr/token';
     }
     document.body.appendChild(tag);
+  }, [signIn]);
+
+  // Every call made or missed in the panel lands in the call log and the stats.
+  useEffect(() => {
+    const report = (e: Event) => {
+      const event = e.type.slice('dialerr:'.length);
+      void fetch('/api/dialerr/events', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event, detail: (e as CustomEvent).detail }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+    const show = () => {
+      setSheet(true);
+      setOpen(true);
+    };
+    TRACKED.forEach((t) => window.addEventListener(`dialerr:${t}`, report));
+    window.addEventListener(OPEN_EVENT, show);
+    return () => {
+      TRACKED.forEach((t) => window.removeEventListener(`dialerr:${t}`, report));
+      window.removeEventListener(OPEN_EVENT, show);
+    };
   }, []);
 
   useEffect(() => {

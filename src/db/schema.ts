@@ -32,6 +32,8 @@ export const users = pgTable(
     dailyCallGoal: integer('daily_call_goal').notNull().default(60),
     phone: text('phone'),
     email: text('email'),
+    // The rep's agent login in Dialerr; their dialer signs in as this and their Dialerr calls count for them.
+    dialerrEmail: text('dialerr_email'),
     lastSeenAt: ts('last_seen_at'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
@@ -108,7 +110,8 @@ export const leads = pgTable(
 );
 export type Lead = typeof leads.$inferSelect;
 
-export const OUTCOMES = ['no_answer', 'voicemail', 'gatekeeper', 'not_interested', 'callback', 'interested', 'appointment', 'sold'] as const;
+// 'connected' is a Dialerr call that was answered but the rep hasn't said how it went yet.
+export const OUTCOMES = ['connected', 'no_answer', 'voicemail', 'gatekeeper', 'not_interested', 'callback', 'interested', 'appointment', 'sold'] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 // Outcomes where the rep actually spoke with the decision maker.
 export const CONVERSATION_OUTCOMES: Outcome[] = ['not_interested', 'callback', 'interested', 'appointment', 'sold'];
@@ -125,9 +128,50 @@ export const calls = pgTable(
     minutes: integer('minutes').notNull().default(0),
     notes: text('notes'),
     at: ts('at').notNull().defaultNow(),
+    // Calls placed through Dialerr are logged automatically; the rest are typed in by the rep.
+    source: text('source').$type<'manual' | 'dialerr'>().notNull().default('manual'),
+    dialerrId: text('dialerr_id'),
+    direction: text('direction').$type<'inbound' | 'outbound'>(),
+    phone: text('phone'),
+    contactName: text('contact_name'),
+    seconds: integer('seconds'),
+    disposition: text('disposition'),
+    recordingUrl: text('recording_url'),
+    aiSummary: text('ai_summary'),
   },
-  (t) => [index('calls_rep_at_idx').on(t.repId, t.at), index('calls_lead_idx').on(t.leadId)],
+  (t) => [
+    index('calls_rep_at_idx').on(t.repId, t.at),
+    index('calls_lead_idx').on(t.leadId),
+    uniqueIndex('calls_dialerr_idx').on(t.dialerrId),
+  ],
 );
+export type Call = typeof calls.$inferSelect;
+
+// Texts and voicemails from Dialerr (calls go in `calls`).
+export const dialerEvents = pgTable(
+  'dialer_events',
+  {
+    id: serial('id').primaryKey(),
+    repId: integer('rep_id').references(() => users.id, { onDelete: 'set null' }),
+    kind: text('kind').$type<'sms_in' | 'sms_out' | 'voicemail'>().notNull(),
+    phone: text('phone'),
+    name: text('name'),
+    body: text('body'),
+    url: text('url'),
+    seconds: integer('seconds'),
+    // Dialerr's message id, so a webhook retry or a second source doesn't double-count.
+    externalId: text('external_id'),
+    at: ts('at').notNull().defaultNow(),
+  },
+  (t) => [index('dialer_events_at_idx').on(t.at), uniqueIndex('dialer_events_external_idx').on(t.externalId)],
+);
+
+// Small key/value store for settings the owner edits in the admin (e.g. the Dialerr API token).
+export const settings = pgTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
 
 // A sale is a client on a monthly plan. Revenue and commission come from its payments.
 export const SALE_STATUSES = ['pending', 'active', 'cancelled'] as const;

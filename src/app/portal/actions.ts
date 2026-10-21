@@ -10,7 +10,7 @@ import { recordPayment } from '@/lib/billing';
 import { notifyAdmins } from '@/lib/notify';
 import { addMessage, describeRequest, readUpload, requestHref } from '@/lib/requests';
 import { hashKey, isValidKey, KEY_RULE, normalizeKey } from '@/lib/auth-key';
-import { isOutcome, isStage, OUTCOME_STAGE, stageIndex } from '@/lib/format';
+import { isOutcome, isStage, OUTCOME_STAGE, stageAfterCall } from '@/lib/format';
 import { cents, date, id, int, optStr, str } from '@/lib/form';
 
 export type ActionState = { ok?: string; error?: string } | null;
@@ -41,13 +41,12 @@ export async function logCall(_prev: ActionState, f: FormData): Promise<ActionSt
   });
 
   if (lead) {
-    const next = OUTCOME_STAGE[outcome];
+    const next = stageAfterCall(lead.stage, outcome);
     const set: Partial<typeof leads.$inferInsert> = { updatedAt: new Date() };
-    // Calls only move a lead forward; "not interested" closes it unless it's already won.
-    if (next && lead.stage !== 'won' && (next === 'lost' || stageIndex(next) > stageIndex(lead.stage))) set.stage = next;
+    if (next) set.stage = next;
     const followUp = date(f, 'followUp');
     if (followUp) set.nextFollowUpAt = followUp;
-    else if (next === 'lost') set.nextFollowUpAt = null;
+    else if (OUTCOME_STAGE[outcome] === 'lost') set.nextFollowUpAt = null;
     await db.update(leads).set(set).where(eq(leads.id, lead.id));
   }
   refresh();
@@ -60,6 +59,24 @@ export async function deleteCall(f: FormData) {
   if (!callId) return;
   const db = await getDb();
   await db.delete(calls).where(and(eq(calls.id, callId), eq(calls.repId, user.id)));
+  refresh();
+}
+
+// The rep says how an auto-logged Dialerr call went (or corrects any call's outcome).
+export async function setCallOutcome(f: FormData) {
+  const user = await requireUser();
+  const callId = id(f);
+  const outcome = str(f, 'outcome');
+  if (!callId || !isOutcome(outcome)) return;
+  const db = await getDb();
+  const [call] = await db
+    .update(calls)
+    .set({ outcome })
+    .where(and(eq(calls.id, callId), eq(calls.repId, user.id)))
+    .returning({ leadId: calls.leadId });
+  const lead = call?.leadId ? await ownLead(call.leadId, user.id) : null;
+  const next = lead && stageAfterCall(lead.stage, outcome);
+  if (lead && next) await db.update(leads).set({ stage: next, updatedAt: new Date() }).where(eq(leads.id, lead.id));
   refresh();
 }
 

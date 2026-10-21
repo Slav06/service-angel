@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { getDb } from '@/db';
 import { leadRequests, leads, packages, payments, sales, users } from '@/db/schema';
 import { monthKey, monthLabel, recordPayment } from '@/lib/billing';
+import { dialerrApi, setSetting, SETTING } from '@/lib/dialerr';
 import { notify } from '@/lib/notify';
 import { addMessage, describeRequest, isCsvLike, readUpload, requestHref } from '@/lib/requests';
 import { findUserByName, requireAdmin, revokeSessions } from '@/lib/auth';
@@ -369,4 +370,39 @@ export async function savePackage(_prev: ActionState, f: FormData): Promise<Acti
   refresh();
   revalidatePath('/');
   return { ok: 'Saved — the public pricing section is updated.' };
+}
+
+// ---------- Dialerr ----------
+
+export async function linkDialerr(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const repId = id(f);
+  if (!repId) return { error: 'Missing rep.' };
+  const email = str(f, 'dialerrEmail', 200).toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'That doesn’t look like an email address.' };
+  const db = await getDb();
+  const [taken] = email
+    ? await db.select({ name: users.name }).from(users).where(and(sql`lower(${users.dialerrEmail}) = ${email}`, sql`${users.id} <> ${repId}`))
+    : [];
+  if (taken) return { error: `${taken.name} is already linked to that Dialerr login.` };
+  await db.update(users).set({ dialerrEmail: email }).where(eq(users.id, repId));
+  refresh();
+  return { ok: email ? 'Linked. Their dialer signs in as this Dialerr agent next time they open the portal.' : 'Unlinked.' };
+}
+
+export async function saveDialerrToken(_prev: ActionState, f: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const token = str(f, 'token', 200);
+  if (!/^api_[0-9a-f]{64}$/i.test(token)) return { error: 'Paste the API token that starts with “api_” (Settings → API Access → API tokens).' };
+  const r = await dialerrApi('/api/v1/leads?limit=1', token).catch(() => null);
+  if (!r?.ok) return { error: `Dialerr didn’t accept that token${r ? ` (${r.status})` : ''}. Check it hasn’t been revoked.` };
+  await setSetting(SETTING.apiToken, token);
+  refresh();
+  return { ok: 'Connected. New calls now pick up their length, direction, disposition and recording from Dialerr.' };
+}
+
+export async function clearDialerrToken() {
+  await requireAdmin();
+  await setSetting(SETTING.apiToken, null);
+  refresh();
 }

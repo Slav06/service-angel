@@ -2,11 +2,12 @@ import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { deleteCall } from '@/app/portal/actions';
 import { CallLogger } from '@/components/call-logger';
+import { OutcomePicker, RecordingLink } from '@/components/dialer-activity';
 import { Badge, Empty, PageHeader, Stat } from '@/components/ui';
 import { getDb } from '@/db';
 import { calls, leads } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
-import { fmtDate, OUTCOME_CLASS, OUTCOME_LABEL, pct } from '@/lib/format';
+import { duration, fmtDate, OUTCOME_CLASS, OUTCOME_LABEL, pct } from '@/lib/format';
 import { statsFor } from '@/lib/stats';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,23 @@ export default async function Calls() {
       .where(and(eq(leads.repId, user.id), notInArray(leads.stage, ['won', 'lost'])))
       .orderBy(asc(leads.nextFollowUpAt), asc(leads.business)),
     db
-      .select({ id: calls.id, outcome: calls.outcome, minutes: calls.minutes, notes: calls.notes, at: calls.at, leadId: calls.leadId, business: leads.business })
+      .select({
+        id: calls.id,
+        outcome: calls.outcome,
+        minutes: calls.minutes,
+        seconds: calls.seconds,
+        notes: calls.notes,
+        at: calls.at,
+        leadId: calls.leadId,
+        business: leads.business,
+        source: calls.source,
+        direction: calls.direction,
+        phone: calls.phone,
+        contactName: calls.contactName,
+        disposition: calls.disposition,
+        recordingUrl: calls.recordingUrl,
+        aiSummary: calls.aiSummary,
+      })
       .from(calls)
       .leftJoin(leads, eq(leads.id, calls.leadId))
       .where(eq(calls.repId, user.id))
@@ -33,7 +50,10 @@ export default async function Calls() {
 
   return (
     <>
-      <PageHeader title="Log calls" sub="Every dial counts — log it here and your stats update instantly." />
+      <PageHeader
+        title="Calls"
+        sub="Calls you make in the Dialerr panel are logged here automatically — just tap how each one went. Calls from your own phone, log by hand."
+      />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
         <div className="space-y-4">
           <div className="card">
@@ -51,7 +71,7 @@ export default async function Calls() {
                 <th>When</th>
                 <th>Lead</th>
                 <th>Outcome</th>
-                <th>Min</th>
+                <th>Length</th>
                 <th>Notes</th>
                 <th />
               </tr>
@@ -66,14 +86,32 @@ export default async function Calls() {
                         {c.business}
                       </Link>
                     ) : (
-                      <span className="text-zinc-400">Cold call</span>
+                      <span className="text-zinc-400">{c.contactName ?? c.phone ?? 'Cold call'}</span>
+                    )}
+                    {c.source === 'dialerr' && (
+                      <span className="ml-1.5 text-[11px] text-zinc-400" title="Logged automatically from Dialerr">
+                        {c.direction === 'inbound' ? '↙ inbound' : '↗ Dialerr'}
+                      </span>
                     )}
                   </td>
-                  <td>
+                  <td className={c.outcome === 'connected' ? 'min-w-64' : ''}>
                     <Badge className={OUTCOME_CLASS[c.outcome]}>{OUTCOME_LABEL[c.outcome]}</Badge>
+                    {c.outcome === 'connected' && (
+                      <div className="mt-1.5">
+                        <OutcomePicker callId={c.id} />
+                      </div>
+                    )}
                   </td>
-                  <td className="tabular-nums">{c.minutes || ''}</td>
-                  <td className="max-w-xs text-zinc-600">{c.notes}</td>
+                  <td className="whitespace-nowrap tabular-nums">
+                    {c.seconds != null ? duration(c.seconds) : c.minutes ? `${c.minutes} min` : ''}
+                    <div>
+                      <RecordingLink call={c} />
+                    </div>
+                  </td>
+                  <td className="max-w-xs text-zinc-600">
+                    {c.disposition && <span className="text-xs text-zinc-500">“{c.disposition}” </span>}
+                    {c.aiSummary ?? c.notes}
+                  </td>
                   <td>
                     <form action={deleteCall}>
                       <input type="hidden" name="id" value={c.id} />

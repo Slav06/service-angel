@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
     <AppShell
       user={user}
       bell={{ href: '/admin/notifications', count: unread }}
-      aside={<DialerPanel />}
+      aside={<DialerPanel signIn />}
       nav={[
         { href: '/admin', label: 'Company overview' },
         { href: '/admin/reps', label: 'Sales reps' },
@@ -29,6 +29,7 @@ export default async function AdminLayout({ children }: LayoutProps<'/admin'>) {
         { href: '/admin/sales', label: 'Clients & payouts' },
         { href: '/admin/leaderboard', label: 'Leaderboard' },
         { href: '/admin/packages', label: 'Packages & pricing' },
+        { href: '/admin/dialerr', label: 'Dialerr setup' },
       ]}
       switchTo={{ href: '/portal', label: 'My rep portal' }}
     >

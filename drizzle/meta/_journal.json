@@ -29,6 +29,13 @@
       "when": 1792478826917,
       "tag": "0003_request_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792564159604,
+      "tag": "0004_dialerr",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm';
 import Link from 'next/link';
+import { CallFeed, PhoneTiles, TextFeed } from '@/components/dialer-activity';
 import { Bars, PageHeader, PeriodTabs, Stat } from '@/components/ui';
 import { getDb } from '@/db';
 import { users } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth';
-import { ago, money, pct, ratio } from '@/lib/format';
-import { commissionOwed, dailySeries, isPeriod, PERIODS, repStats, sumStats } from '@/lib/stats';
+import { recentDialerrCalls, recentTexts } from '@/lib/dialerr';
+import { ago, duration, hoursMinutes, money, pct, ratio } from '@/lib/format';
+import { commissionOwed, dailySeries, isPeriod, PERIODS, phoneStats, repStats, sumStats } from '@/lib/stats';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,12 +16,16 @@ export default async function Overview({ searchParams }: PageProps<'/admin'>) {
   const { p } = await searchParams;
   const period = isPeriod(p) ? p : 'month';
   const db = await getDb();
-  const [reps, stats, series, owed] = await Promise.all([
+  const [reps, stats, series, owed, phone, feed, texts] = await Promise.all([
     db.select().from(users).where(eq(users.active, true)),
     repStats(period),
     dailySeries(30),
     commissionOwed(),
+    phoneStats(period),
+    recentDialerrCalls(15),
+    recentTexts(10),
   ]);
+  const teamPhone = phone.get(0)!;
   const t = sumStats(stats.values());
   const label = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   const rows = reps
@@ -54,7 +60,69 @@ export default async function Overview({ searchParams }: PageProps<'/admin'>) {
         </div>
       </div>
 
-      <div className="card mt-4 overflow-x-auto p-0">
+      <section className="mt-8">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold">Phone activity · Dialerr</h2>
+          <Link href="/admin/dialerr" className="text-xs text-brand-600 hover:underline">
+            Dialerr setup →
+          </Link>
+        </div>
+        <PhoneTiles s={teamPhone} />
+        <div className="card mt-4 overflow-x-auto p-0">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Rep</th>
+                <th className="text-right">Dials</th>
+                <th className="text-right">Answered</th>
+                <th className="text-right">Answer %</th>
+                <th className="text-right">Inbound</th>
+                <th className="text-right">Talk time</th>
+                <th className="text-right">Avg call</th>
+                <th className="text-right">Texts sent</th>
+                <th className="text-right">Need outcome</th>
+                <th>Last call</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reps.map((r) => {
+                const ph = phone.get(r.id);
+                return (
+                  <tr key={r.id} className="hover:bg-zinc-50">
+                    <td>
+                      <Link href={`/admin/reps/${r.id}?p=${period}`} className="font-medium text-brand-700 hover:underline">
+                        {r.name}
+                      </Link>
+                      {!r.dialerrEmail && <span className="ml-1.5 text-xs text-amber-600">not linked</span>}
+                    </td>
+                    <td className="text-right tabular-nums">{ph?.dials ?? 0}</td>
+                    <td className="text-right tabular-nums">{ph?.answered ?? 0}</td>
+                    <td className="text-right tabular-nums">{pct(ph?.answerRate)}</td>
+                    <td className="text-right tabular-nums">{ph?.inbound ?? 0}</td>
+                    <td className="text-right tabular-nums">{hoursMinutes(ph?.talkSeconds ?? 0)}</td>
+                    <td className="text-right tabular-nums">{ph?.avgCall == null ? '—' : duration(ph.avgCall)}</td>
+                    <td className="text-right tabular-nums">{ph?.textsSent ?? 0}</td>
+                    <td className={`text-right tabular-nums ${ph?.untagged ? 'font-medium text-amber-700' : ''}`}>{ph?.untagged ?? 0}</td>
+                    <td className="text-zinc-500">{ago(ph?.lastCallAt)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+          <div className="card">
+            <p className="h2">Latest calls</p>
+            <CallFeed rows={feed} showRep />
+          </div>
+          <div className="card">
+            <p className="h2">Texts & voicemails</p>
+            <TextFeed rows={texts} showRep />
+          </div>
+        </div>
+      </section>
+
+      <div className="card mt-8 overflow-x-auto p-0">
         <p className="h2 px-4 pt-4">Reps · {PERIODS[period].toLowerCase()}</p>
         <table className="table mt-2">
           <thead>

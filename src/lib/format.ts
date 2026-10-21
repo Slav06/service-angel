@@ -58,6 +58,7 @@ export const STAGE_CLASS: Record<Stage, string> = {
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
+  connected: 'Answered',
   no_answer: 'No answer',
   voicemail: 'Voicemail',
   gatekeeper: 'Gatekeeper',
@@ -69,6 +70,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 };
 
 export const OUTCOME_CLASS: Record<Outcome, string> = {
+  connected: 'bg-sky-100 text-sky-800',
   no_answer: 'bg-zinc-100 text-zinc-600',
   voicemail: 'bg-zinc-100 text-zinc-600',
   gatekeeper: 'bg-zinc-100 text-zinc-700',
@@ -109,6 +111,7 @@ export const REQUEST_STATUS_CLASS: Record<RequestStatus, string> = {
 
 // Where a call outcome moves the lead (only ever forward, except "not interested").
 export const OUTCOME_STAGE: Partial<Record<Outcome, Stage>> = {
+  connected: 'contacted',
   no_answer: 'contacted',
   voicemail: 'contacted',
   gatekeeper: 'contacted',
@@ -117,6 +120,29 @@ export const OUTCOME_STAGE: Partial<Record<Outcome, Stage>> = {
   appointment: 'interested',
   not_interested: 'lost',
 };
+
+// The stage a call moves a lead to, or null to leave it. Calls only move a lead forward;
+// "not interested" closes it unless it's already won.
+export function stageAfterCall(current: Stage, outcome: Outcome): Stage | null {
+  const next = OUTCOME_STAGE[outcome];
+  if (!next || current === 'won') return null;
+  return next === 'lost' || stageIndex(next) > stageIndex(current) ? next : null;
+}
+
+// 125 → "2:05", 3725 → "1:02:05".
+export function duration(seconds: number | null | undefined) {
+  const s = Math.max(0, Math.round(seconds ?? 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+// "3h 20m" / "45m" for talk-time totals.
+export function hoursMinutes(seconds: number) {
+  const m = Math.round(seconds / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+}
 
 export const isStage = (s: unknown): s is Stage => STAGES.includes(s as Stage);
 export const isOutcome = (s: unknown): s is Outcome => OUTCOMES.includes(s as Outcome);

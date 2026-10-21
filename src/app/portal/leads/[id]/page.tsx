@@ -3,13 +3,15 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { updateLead } from '@/app/portal/actions';
 import { ActionForm, Submit } from '@/components/action-form';
+import { CallButton } from '@/components/call-button';
 import { CallLogger } from '@/components/call-logger';
+import { RecordingLink } from '@/components/dialer-activity';
 import { LeadFields } from '@/components/lead-fields';
 import { Badge, Empty, PageHeader } from '@/components/ui';
 import { getDb } from '@/db';
 import { calls, leads, sales, STAGES } from '@/db/schema';
 import { requireUser } from '@/lib/auth';
-import { fmtDate, money, OUTCOME_CLASS, OUTCOME_LABEL, STAGE_CLASS, STAGE_LABEL } from '@/lib/format';
+import { duration, fmtDate, money, OUTCOME_CLASS, OUTCOME_LABEL, STAGE_CLASS, STAGE_LABEL } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +43,9 @@ export default async function LeadDetail({ params }: PageProps<'/portal/leads/[i
       >
         <div className="flex gap-2">
           {lead.phone && (
-            <a href={`tel:${lead.phone}`} className="btn btn-primary">
+            <CallButton phone={lead.phone} name={lead.business} className="btn btn-primary">
               📞 Call {lead.phone}
-            </a>
+            </CallButton>
           )}
           {lead.stage !== 'won' && (
             <Link href={`/portal/sales/new?lead=${lead.id}`} className="btn">
@@ -74,8 +76,14 @@ export default async function LeadDetail({ params }: PageProps<'/portal/leads/[i
                   <li key={c.id} className="py-2 text-sm">
                     <div className="flex items-center gap-2">
                       <Badge className={OUTCOME_CLASS[c.outcome]}>{OUTCOME_LABEL[c.outcome]}</Badge>
-                      <span className="text-xs text-zinc-500">{fmtDate(c.at, true)}{c.minutes ? ` · ${c.minutes} min` : ''}</span>
+                      <span className="text-xs text-zinc-500">
+                        {fmtDate(c.at, true)}
+                        {c.seconds ? ` · ${duration(c.seconds)}` : c.minutes ? ` · ${c.minutes} min` : ''}
+                        {c.disposition && ` · ${c.disposition}`}
+                      </span>
+                      <RecordingLink call={c} />
                     </div>
+                    {c.aiSummary && <p className="mt-1 text-zinc-600 italic">{c.aiSummary}</p>}
                     {c.notes && <p className="mt-1 text-zinc-700">{c.notes}</p>}
                   </li>
                 ))}

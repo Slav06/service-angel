@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import Link from 'next/link';
+import { CallButton } from '@/components/call-button';
 import { Badge, Empty, PageHeader } from '@/components/ui';
 import { getDb } from '@/db';
 import { leads, STAGES } from '@/db/schema';
@@ -80,7 +81,7 @@ export default async function MyLeads({ searchParams }: PageProps<'/portal/leads
                     ) : null}
                   </td>
                   <td>{l.contactName}</td>
-                  <td className="whitespace-nowrap">{l.phone && <a href={`tel:${l.phone}`} className="hover:underline">{l.phone}</a>}</td>
+                  <td className="whitespace-nowrap">{l.phone && <CallButton phone={l.phone} name={l.business} className="hover:underline" />}</td>
                   <td className="text-zinc-600">{[l.city, l.niche].filter(Boolean).join(' · ')}</td>
                   <td>
                     <Badge className={STAGE_CLASS[l.stage]}>{STAGE_LABEL[l.stage]}</Badge>

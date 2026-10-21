@@ -30,7 +30,7 @@ export function CallLogger({ leads, leadId }: { leads?: { id: number; business: 
         <label className="label">How did it go?</label>
         <input type="hidden" name="outcome" value={outcome} />
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-          {OUTCOMES.map((o) => (
+          {OUTCOMES.filter((o) => o !== 'connected').map((o) => (
             <button
               key={o}
               type="button"

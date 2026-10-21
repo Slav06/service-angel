@@ -204,6 +204,99 @@ export async function dailySeries(days: number, repId?: number): Promise<DayPoin
       from d left join c using (day) left join s using (day) left join p using (day) order by d.day`);
 }
 
+export type PhoneStats = {
+  dials: number; // outbound Dialerr calls
+  answered: number; // ...that someone picked up
+  inbound: number;
+  talkSeconds: number;
+  longest: number;
+  untagged: number; // answered calls the rep hasn't given an outcome yet
+  recorded: number;
+  textsSent: number;
+  textsReceived: number;
+  voicemails: number;
+  lastCallAt: Date | null;
+  answerRate: number | null;
+  avgCall: number | null; // seconds per answered call
+};
+
+const emptyPhone = (): PhoneStats => ({
+  dials: 0,
+  answered: 0,
+  inbound: 0,
+  talkSeconds: 0,
+  longest: 0,
+  untagged: 0,
+  recorded: 0,
+  textsSent: 0,
+  textsReceived: 0,
+  voicemails: 0,
+  lastCallAt: null,
+  answerRate: null,
+  avgCall: null,
+});
+
+// Dialerr activity per rep for a period (key 0 = the whole team, including texts no rep could be matched to).
+export async function phoneStats(period: Period, repId?: number): Promise<Map<number, PhoneStats>> {
+  const repFilter = repId ? sql`rep_id = ${repId}` : sql`true`;
+  const [callRows, eventRows] = await Promise.all([
+    query<{ rep_id: number; dials: number; answered: number; inbound: number; talk: number; longest: number; untagged: number; recorded: number; last: string | null }>(sql`
+      select rep_id,
+        (count(*) filter (where coalesce(direction, 'outbound') = 'outbound'))::int as dials,
+        (count(*) filter (where coalesce(direction, 'outbound') = 'outbound' and outcome <> 'no_answer'))::int as answered,
+        (count(*) filter (where direction = 'inbound'))::int as inbound,
+        coalesce(sum(seconds), 0)::int as talk,
+        coalesce(max(seconds), 0)::int as longest,
+        (count(*) filter (where outcome = 'connected'))::int as untagged,
+        (count(*) filter (where recording_url is not null))::int as recorded,
+        max(at)::text as last
+      from calls
+      where source = 'dialerr' and ${since(sql`at`, period)} and ${repFilter}
+      group by rep_id`),
+    query<{ rep_id: number | null; sent: number; received: number; vm: number }>(sql`
+      select rep_id,
+        (count(*) filter (where kind = 'sms_out'))::int as sent,
+        (count(*) filter (where kind = 'sms_in'))::int as received,
+        (count(*) filter (where kind = 'voicemail'))::int as vm
+      from dialer_events
+      where ${since(sql`at`, period)} and ${repFilter}
+      group by rep_id`),
+  ]);
+
+  const out = new Map<number, PhoneStats>();
+  const get = (id: number) => {
+    let s = out.get(id);
+    if (!s) out.set(id, (s = emptyPhone()));
+    return s;
+  };
+  const team = get(0);
+  for (const r of callRows) {
+    for (const s of [get(r.rep_id), team]) {
+      s.dials += r.dials;
+      s.answered += r.answered;
+      s.inbound += r.inbound;
+      s.talkSeconds += r.talk;
+      s.longest = Math.max(s.longest, r.longest);
+      s.untagged += r.untagged;
+      s.recorded += r.recorded;
+      const last = r.last ? new Date(r.last) : null;
+      if (last && (!s.lastCallAt || last > s.lastCallAt)) s.lastCallAt = last;
+    }
+  }
+  for (const r of eventRows) {
+    for (const s of r.rep_id ? [get(r.rep_id), team] : [team]) {
+      s.textsSent += r.sent;
+      s.textsReceived += r.received;
+      s.voicemails += r.vm;
+    }
+  }
+  for (const s of out.values()) {
+    s.answerRate = ratio(s.answered, s.dials);
+    s.avgCall = s.answered + s.inbound > 0 ? s.talkSeconds / (s.answered + s.inbound) : null;
+  }
+  return out;
+}
+
 // Commission earned but not yet paid out (all time).
 export async function commissionOwed(repId?: number) {
   const repFilter = repId ? sql`rep_id = ${repId}` : sql`true`;

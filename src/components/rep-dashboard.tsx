@@ -3,13 +3,15 @@ import Link from 'next/link';
 import { getDb } from '@/db';
 import { calls, leads, STAGES, users, type User } from '@/db/schema';
 import { ago, money, OUTCOME_CLASS, OUTCOME_LABEL, pct, STAGE_CLASS, STAGE_LABEL } from '@/lib/format';
-import { commissionOwed, dailySeries, PERIODS, pipelineCounts, repStats, statsFor, type Period } from '@/lib/stats';
+import { recentDialerrCalls, recentTexts } from '@/lib/dialerr';
+import { commissionOwed, dailySeries, PERIODS, phoneStats, pipelineCounts, repStats, statsFor, type Period } from '@/lib/stats';
+import { CallFeed, PhoneTiles, TextFeed } from './dialer-activity';
 import { Badge, Bars, Empty, PeriodTabs, Progress, Stat } from './ui';
 
 // Everything a rep needs at a glance. Admins see the same view for any rep.
 export async function RepDashboard({ rep, period, base, viewer }: { rep: User; period: Period; base: string; viewer: 'self' | 'admin' }) {
   const db = await getDb();
-  const [s, month, today, series, owed, pipe, recent, team, openLeads] = await Promise.all([
+  const [s, month, today, series, owed, pipe, recent, team, openLeads, phone, feed, texts] = await Promise.all([
     statsFor(rep.id, period),
     statsFor(rep.id, 'month'),
     statsFor(rep.id, 'today'),
@@ -20,7 +22,7 @@ export async function RepDashboard({ rep, period, base, viewer }: { rep: User; p
       .select({ id: calls.id, outcome: calls.outcome, at: calls.at, notes: calls.notes, business: leads.business, leadId: leads.id })
       .from(calls)
       .leftJoin(leads, eq(leads.id, calls.leadId))
-      .where(eq(calls.repId, rep.id))
+      .where(and(eq(calls.repId, rep.id), eq(calls.source, 'manual')))
       .orderBy(desc(calls.at))
       .limit(8),
     repStats('month'),
@@ -28,7 +30,11 @@ export async function RepDashboard({ rep, period, base, viewer }: { rep: User; p
       .select({ n: leads.id })
       .from(leads)
       .where(and(eq(leads.repId, rep.id), eq(leads.stage, 'new'))),
+    phoneStats(period, rep.id),
+    recentDialerrCalls(12, rep.id),
+    recentTexts(8, rep.id),
   ]);
+  const ph = phone.get(rep.id) ?? phone.get(0)!;
 
   const activeReps = await db.select({ id: users.id }).from(users).where(eq(users.active, true));
   const ranked = activeReps
@@ -119,8 +125,38 @@ export async function RepDashboard({ rep, period, base, viewer }: { rep: User; p
         </div>
       </div>
 
+      <section>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold">Phone activity · Dialerr</h2>
+          {ph.untagged > 0 && (
+            <p className="text-sm font-medium text-amber-700">
+              {ph.untagged} answered call{ph.untagged === 1 ? '' : 's'} need{ph.untagged === 1 ? 's' : ''} an outcome
+            </p>
+          )}
+        </div>
+        {viewer === 'admin' && !rep.dialerrEmail && (
+          <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {rep.name} isn’t linked to a Dialerr login yet, so calls they make outside this portal won’t count.{' '}
+            <Link href="/admin/dialerr" className="font-medium underline">
+              Link them
+            </Link>
+          </p>
+        )}
+        <PhoneTiles s={ph} />
+        <div className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+          <div className="card">
+            <p className="h2">Dialerr calls</p>
+            <CallFeed rows={feed} canTag={viewer === 'self'} leadHref={viewer === 'self' ? (id) => `/portal/leads/${id}` : undefined} />
+          </div>
+          <div className="card">
+            <p className="h2">Texts & voicemails</p>
+            <TextFeed rows={texts} />
+          </div>
+        </div>
+      </section>
+
       <div className="card">
-        <p className="h2">Recent calls</p>
+        <p className="h2">Calls logged by hand</p>
         {recent.length ? (
           <ul className="mt-2 divide-y divide-zinc-100">
             {recent.map((c) => (
