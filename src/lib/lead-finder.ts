@@ -16,6 +16,8 @@ import { addMessage, describeRequest, requestHref } from './requests';
 //   4. Claude picks the owner-run ones most likely to buy a website and writes a note for the rep;
 //   5. each pick is registered in finder_places (forever) and lands in the rep's leads.
 // Claude never invents a business: it only plans searches and chooses among search results.
+// Without an Outscraper key, the terminal engine finds businesses by searching the web itself (lead-finder-cli.ts
+// cliResearch); every phone number and name it returns must appear in a page it actually read, or it's dropped.
 // A request is worked in rounds. Claude runs one of two ways (the "engine" setting):
 //   terminal — `npm run finder` on the owner's computer, using their Claude subscription (lead-finder-cli.ts);
 //   api      — on the website with an Anthropic API key; each round runs in its own function call (kept well
@@ -77,7 +79,8 @@ export async function finderConfig(): Promise<FinderConfig> {
 }
 
 // On and connected: new requests go straight to the finder. The terminal engine needs no Anthropic key.
-export const finderReady = (c: FinderConfig) => c.enabled && !!c.outscraperKey && (c.engine === 'terminal' || !!c.anthropicKey);
+// Without Outscraper, only the terminal engine can work (Claude researches the web itself).
+export const finderReady = (c: FinderConfig) => c.enabled && (c.engine === 'terminal' || (!!c.anthropicKey && !!c.outscraperKey));
 
 // The terminal worker checks in every poll, so the admin can tell whether it's running.
 export async function markWorkerSeen() {
@@ -226,7 +229,7 @@ async function unseen(cands: Candidate[]) {
 
 // ---------- Claude ----------
 
-const WHO = `Service Angel builds and runs websites for small businesses on a $500/month plan. Our sales reps cold-call business owners.
+export const WHO = `Service Angel builds and runs websites for small businesses on a $500/month plan. Our sales reps cold-call business owners.
 The ideal lead is a small, independent business run by its owner, a family or a small team: no website of its own (at most a Facebook,
 Instagram or directory page), few Google reviews, still building its customer base, and the kind of business whose customers search
 online before they buy (home services and trades, beauty and wellness, auto, cleaning, pets, events, food trucks and small eateries,
@@ -331,7 +334,9 @@ ${JSON.stringify(list)}`;
 // ---------- Delivery ----------
 
 // Register and hand out picks; anything another run grabbed first (the unique indexes) is skipped.
-async function deliver(req: LeadRequest, picks: Awaited<ReturnType<typeof pickBest>>) {
+export type LeadPick = { cand: Candidate; score: number; why: string };
+
+async function deliver(req: LeadRequest, picks: LeadPick[]) {
   const db = await getDb();
   let added = 0;
   for (const { cand: c, score, why } of picks) {
@@ -354,7 +359,14 @@ async function deliver(req: LeadRequest, picks: Awaited<ReturnType<typeof pickBe
         // Shown read-only on the lead as "Why Claude picked this lead"; the rep's own notes stay empty.
         message: [
           why,
-          `⭐ ${c.rating ?? '—'} · ${c.reviews ?? 0} Google review${c.reviews === 1 ? '' : 's'} · ${host ? `only has ${host}` : 'no website'} · lead score ${score}/10`,
+          [
+            c.rating != null && `⭐ ${c.rating}`,
+            c.reviews != null ? `${c.reviews} Google review${c.reviews === 1 ? '' : 's'}` : 'review count not checked',
+            host ? `only has ${host}` : 'no website',
+            `lead score ${score}/10`,
+          ]
+            .filter(Boolean)
+            .join(' · '),
           c.full_address,
         ]
           .filter(Boolean)
@@ -373,7 +385,7 @@ async function deliver(req: LeadRequest, picks: Awaited<ReturnType<typeof pickBe
 
 // ---------- Running a request ----------
 
-const maxRounds = (quantity: number) => Math.min(15, 3 + Math.ceil(quantity / 8));
+const maxRounds = (quantity: number) => Math.min(20, 3 + Math.ceil(quantity / 5));
 
 // Take the request for this run: queued, or "running" with no sign of life (the last run died).
 async function claim(id: number) {
@@ -394,27 +406,55 @@ async function claim(id: number) {
   return req ?? null;
 }
 
+// ---------- Web research (no Outscraper) ----------
+
+// Finds businesses by searching the web; returns picks whose phone and name were verified against what it read.
+export type Research = (req: LeadRequest, needed: number, cfg: FinderConfig) => Promise<{ picks: LeadPick[]; searched: string[]; scanned: number }>;
+
+export const mapsSearchUrl = (name: string, place: string) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${place}`.trim())}`;
+
+// Same rules as screen() for what the web research reports, plus never-before-given.
+export async function screenResearch(picks: LeadPick[], maxReviews: number) {
+  const ok = picks.filter(
+    ({ cand: c }) => phone10(c.phone).length >= 7 && !hasRealWebsite(c.site) && (c.reviews == null || c.reviews <= maxReviews),
+  );
+  const fresh = new Set((await unseen(ok.map((p) => p.cand))).map((c) => c.place_id));
+  return ok.filter((p) => fresh.has(p.cand.place_id));
+}
+
 // One round of searching. Returns true when another round should follow. `ask` is the terminal engine when
 // called from `npm run finder`; otherwise the API key is used.
-export async function runFinderRound(id: number, engineAsk?: Ask): Promise<boolean> {
+export async function runFinderRound(id: number, engineAsk?: Ask, research?: Research): Promise<boolean> {
   const req = await claim(id);
   if (!req) return false;
   const db = await getDb();
   const cfg = await finderConfig();
   try {
-    if (!cfg.outscraperKey) throw new Error('The lead finder is missing its Outscraper key.');
-    const ask = engineAsk ?? (cfg.anthropicKey ? apiAsk(cfg.anthropicKey) : null);
-    if (!ask) throw new Error('The lead finder is missing its Claude API key.');
     const needed = req.quantity - req.deliveredCount;
     if (needed <= 0 || req.finderRounds >= maxRounds(req.quantity)) return finish(req);
 
-    const searches = await planSearches(ask, req, needed, Math.min(5, 2 + Math.ceil(needed / 15)), cfg.countries);
-    const results = await Promise.allSettled(searches.map((s) => searchMaps(cfg.outscraperKey!, s.query, s.region)));
-    const places = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-    if (searches.length && results.every((r) => r.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason;
-
-    const fresh = await unseen(screen(places, cfg.maxReviews));
-    const picks = fresh.length ? await pickBest(ask, req, fresh.slice(0, 100), needed) : [];
+    let picks: LeadPick[];
+    let queries: string[];
+    let scanned: number;
+    if (cfg.outscraperKey) {
+      const ask = engineAsk ?? (cfg.anthropicKey ? apiAsk(cfg.anthropicKey) : null);
+      if (!ask) throw new Error('The lead finder is missing its Claude API key.');
+      const searches = await planSearches(ask, req, needed, Math.min(5, 2 + Math.ceil(needed / 15)), cfg.countries);
+      const results = await Promise.allSettled(searches.map((s) => searchMaps(cfg.outscraperKey!, s.query, s.region)));
+      const places = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+      if (searches.length && results.every((r) => r.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason;
+      const fresh = await unseen(screen(places, cfg.maxReviews));
+      picks = fresh.length ? await pickBest(ask, req, fresh.slice(0, 100), needed) : [];
+      queries = searches.map((s) => s.query);
+      scanned = places.length;
+    } else {
+      if (!research) throw new Error('Without an Outscraper key, leads are found by the lead finder on your computer (npm run finder).');
+      const found = await research(req, Math.min(needed, 10), cfg);
+      picks = (await screenResearch(found.picks, cfg.maxReviews)).slice(0, needed);
+      queries = found.searched;
+      scanned = found.scanned;
+    }
     const added = await deliver(req, picks);
 
     const [after] = await db
@@ -422,8 +462,8 @@ export async function runFinderRound(id: number, engineAsk?: Ask): Promise<boole
       .set({
         deliveredCount: sql`${leadRequests.deliveredCount} + ${added}`,
         finderRounds: sql`${leadRequests.finderRounds} + 1`,
-        finderScanned: sql`${leadRequests.finderScanned} + ${places.length}`,
-        finderQueries: [...req.finderQueries, ...searches.map((s) => s.query)],
+        finderScanned: sql`${leadRequests.finderScanned} + ${scanned}`,
+        finderQueries: [...req.finderQueries, ...queries].slice(-200),
         finderBeatAt: new Date(),
         finderError: null,
         status: req.deliveredCount + added > 0 ? 'partial' : req.status,

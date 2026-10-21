@@ -91,7 +91,7 @@ export default async function LeadFinder() {
               ? 'On — new lead requests go straight to Claude.'
               : !cfg.enabled
                 ? 'Off — lead requests come to you to fill by hand.'
-                : `Connect ${terminal ? 'Outscraper' : 'both keys'} below to switch it on. Until then, lead requests come to you to fill by hand.`}
+                : 'Connect both keys below to switch it on. Until then, lead requests come to you to fill by hand.'}
           </div>
 
           {terminal && (
@@ -131,13 +131,21 @@ export default async function LeadFinder() {
             )}
             <KeyRow
               which="outscraper"
-              label="Outscraper (Google Maps data)"
+              label={terminal ? 'Outscraper (optional)' : 'Outscraper (Google Maps data)'}
               value={cfg.outscraperKey}
               help={
-                <>
-                  Supplies the real businesses — name, phone, website, reviews. At <b>outscraper.com</b>: sign up, then Profile → API key. First 500
-                  businesses each month are free, then $3 per 1,000.
-                </>
+                terminal ? (
+                  <>
+                    Not needed: without it, Claude finds businesses by searching the web itself, and every phone number is checked against a page it
+                    read. With it, leads come straight from Google Maps — faster, with exact review counts. At <b>outscraper.com</b>: Profile → API key
+                    (first 500 businesses a month free, then $3 per 1,000).
+                  </>
+                ) : (
+                  <>
+                    Supplies the real businesses — name, phone, website, reviews. At <b>outscraper.com</b>: sign up, then Profile → API key. First 500
+                    businesses each month are free, then $3 per 1,000.
+                  </>
+                )
               }
             />
           </div>
@@ -223,12 +231,14 @@ export default async function LeadFinder() {
           <div className="card text-xs text-zinc-600 sm:col-span-3 2xl:col-span-1">
             <p className="font-semibold text-zinc-800">How a lead is chosen</p>
             <ol className="mt-2 list-decimal space-y-1 pl-4">
-              <li>Claude plans Google Maps searches — a business type in a town — from the rep’s request.</li>
-              <li>Only open businesses with a phone number, no website of their own (a Facebook or Instagram page is fine) and few reviews go through.</li>
+              <li>Claude searches for businesses of the type and area the rep asked for — on Google Maps through Outscraper, or across the web itself.</li>
+              <li>Only businesses with a phone number, no website of their own (a Facebook or Instagram page is fine) and few reviews go through.</li>
               <li>Anything given out before, or already in your leads, is skipped.</li>
               <li>Claude drops chains, franchises and bigger companies, picks the owner-run businesses most likely to buy, and writes a note for the rep.</li>
             </ol>
-            <p className="mt-2">Claude never makes up a business: every lead is a real Google Maps listing, linked from the lead.</p>
+            <p className="mt-2">
+              Claude never makes up a business: every phone number must appear on a listing or web page it actually read, or the lead is thrown out.
+            </p>
           </div>
         </aside>
       </div>

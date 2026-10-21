@@ -1,13 +1,13 @@
 // The lead finder, running on your computer with your Claude subscription.
 //   npm run finder           keep running: fills new lead requests as reps send them (leave the window open)
 //   npm run finder -- --once fill whatever is waiting, then stop
-// Uses the database in .env.local (the live site's), the Outscraper key saved in Owner admin → Lead finder,
-// and the `claude` command you're signed into.
+// Uses the database in .env.local (the live site's) and the `claude` command you're signed into. Businesses come
+// from Outscraper when its key is saved in Owner admin → Lead finder; otherwise Claude searches the web itself.
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { leadRequests, users } from '@/db/schema';
 import { finderConfig, FinderPause, markWorkerSeen, pendingFinderRequests, runFinderRound } from '@/lib/lead-finder';
-import { cliAsk } from '@/lib/lead-finder-cli';
+import { cliAsk, cliResearch } from '@/lib/lead-finder-cli';
 import { describeRequest } from '@/lib/requests';
 
 const once = process.argv.includes('--once');
@@ -23,7 +23,7 @@ async function work(id: number) {
   if (!row) return;
   log(`Request #${id} from ${row.rep}: ${describeRequest(row.r)}`);
   for (let round = 1; ; round++) {
-    const more = await runFinderRound(id, cliAsk);
+    const more = await runFinderRound(id, cliAsk, cliResearch);
     const [r] = await db.select().from(leadRequests).where(eq(leadRequests.id, id));
     log(`  round ${round}: ${r.deliveredCount} of ${r.quantity} found, ${r.finderScanned} businesses checked${r.finderStatus === 'failed' ? ` — stopped: ${r.finderError}` : ''}`);
     if (!more) break;
