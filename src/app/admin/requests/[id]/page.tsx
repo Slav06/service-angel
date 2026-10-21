@@ -13,7 +13,7 @@ import { getDb } from '@/db';
 import { leadRequests, leads, users } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth';
 import { ago, pct, REQUEST_STATUS_CLASS, REQUEST_STATUS_LABEL } from '@/lib/format';
-import { isStale, kickFinder } from '@/lib/lead-finder';
+import { finderConfig, isStale, kickFinder, workerOnline, workerSeenAt } from '@/lib/lead-finder';
 import { markReadFor } from '@/lib/notify';
 import { origin } from '@/lib/origin';
 import { describeRequest, loadThread, requestHref } from '@/lib/requests';
@@ -43,6 +43,8 @@ export default async function AdminRequest({ params }: PageProps<'/admin/request
     db.select({ n: count() }).from(leads).where(and(eq(leads.repId, rep.id), notInArray(leads.stage, ['won', 'lost']))),
     db.select({ n: count() }).from(leads).where(isNull(leads.repId)),
   ]);
+  const [cfg, seen] = await Promise.all([finderConfig(), workerSeenAt()]);
+  const workerOff = cfg.engine === 'terminal' && !workerOnline(seen);
   const open = !['fulfilled', 'denied'].includes(req.status);
   const remaining = Math.max(1, req.quantity - req.deliveredCount);
 
@@ -88,7 +90,7 @@ export default async function AdminRequest({ params }: PageProps<'/admin/request
           </div>
         )}
 
-        <FinderProgress req={req} owner />
+        <FinderProgress req={req} owner workerOff={workerOff} />
 
         <div className="card mt-4 bg-zinc-50/60">
           <Thread items={items} me={admin} />

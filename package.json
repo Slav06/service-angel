@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
-    "user:add": "tsx --env-file-if-exists=.env.local scripts/user.ts"
+    "user:add": "tsx --env-file-if-exists=.env.local scripts/user.ts",
+    "finder": "tsx --env-file-if-exists=.env.local scripts/finder-worker.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",

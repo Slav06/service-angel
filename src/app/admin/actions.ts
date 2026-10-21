@@ -443,6 +443,7 @@ export async function saveFinderSettings(_prev: ActionState, f: FormData): Promi
     .filter((c) => /^[A-Z]{2}$/.test(c));
   await Promise.all([
     setSetting(FINDER.enabled, f.get('enabled') === 'on' ? '1' : '0'),
+    setSetting(FINDER.engine, str(f, 'engine') === 'api' ? 'api' : 'terminal'),
     setSetting(FINDER.maxReviews, String(Math.max(0, Math.min(500, int(f, 'maxReviews', 15))))),
     setSetting(FINDER.maxPerRequest, String(Math.max(1, Math.min(500, int(f, 'maxPerRequest', 50))))),
     setSetting(FINDER.dailyCap, String(Math.max(1, Math.min(5000, int(f, 'dailyCap', 100))))),

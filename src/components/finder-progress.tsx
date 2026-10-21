@@ -4,7 +4,8 @@ import { ago } from '@/lib/format';
 import { AutoRefresh } from './auto-refresh';
 
 // What the Claude lead finder is doing on a request. The owner also gets stop / retry.
-export function FinderProgress({ req, owner = false }: { req: LeadRequest; owner?: boolean }) {
+// workerOff: the owner's terminal worker isn't running, so a queued request is just waiting.
+export function FinderProgress({ req, owner = false, workerOff = false }: { req: LeadRequest; owner?: boolean; workerOff?: boolean }) {
   const s = req.finderStatus;
   if (!s) {
     if (!owner || req.status === 'fulfilled' || req.status === 'denied') return null;
@@ -26,7 +27,7 @@ export function FinderProgress({ req, owner = false }: { req: LeadRequest; owner
           {working && (
             <>
               <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-brand-600" />
-              Claude is finding leads… {req.deliveredCount} of {req.quantity}
+              {s === 'queued' && !req.finderBeatAt ? 'Waiting for Claude to start…' : `Claude is finding leads… ${req.deliveredCount} of ${req.quantity}`}
             </>
           )}
           {s === 'done' && `Claude found ${req.deliveredCount} of ${req.quantity} leads`}
@@ -54,6 +55,12 @@ export function FinderProgress({ req, owner = false }: { req: LeadRequest; owner
         {req.finderRounds > 0 && ` in ${req.finderRounds} round${req.finderRounds === 1 ? '' : 's'} of searching`}
         {working && req.finderBeatAt && ` · last update ${ago(req.finderBeatAt)}`}
       </p>
+      {owner && working && workerOff && (
+        <p className="mt-2 text-xs text-amber-700">
+          The lead finder on your computer isn’t running, so this is waiting. Start it with <code>npm run finder</code> in a terminal.
+        </p>
+      )}
+      {owner && working && req.finderError && <p className="mt-2 text-xs text-amber-700">Paused: {req.finderError}</p>}
       {owner && s === 'failed' && req.finderError && <p className="mt-2 text-xs text-red-700">{req.finderError}</p>}
       {owner && req.finderQueries.length > 0 && (
         <details className="mt-2 text-xs text-zinc-500">

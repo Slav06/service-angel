@@ -16,8 +16,10 @@ import { addMessage, describeRequest, requestHref } from './requests';
 //   4. Claude picks the owner-run ones most likely to buy a website and writes a note for the rep;
 //   5. each pick is registered in finder_places (forever) and lands in the rep's leads.
 // Claude never invents a business: it only plans searches and chooses among search results.
-// A request is worked in rounds; each round runs in its own function call (kept well under the 300 s limit) and
-// starts the next (see kickFinder).
+// A request is worked in rounds. Claude runs one of two ways (the "engine" setting):
+//   terminal — `npm run finder` on the owner's computer, using their Claude subscription (lead-finder-cli.ts);
+//   api      — on the website with an Anthropic API key; each round runs in its own function call (kept well
+//              under the 300 s limit) and starts the next (see kickFinder).
 
 const MODEL = 'claude-opus-5-5';
 const OUTSCRAPER = process.env.OUTSCRAPER_BASE_URL ?? 'https://api.app.outscraper.com'; // override for local testing
@@ -35,12 +37,17 @@ export const FINDER = {
   dailyCap: 'finder.daily_cap',
   countries: 'finder.countries',
   runSecret: 'finder.run_secret',
+  engine: 'finder.engine',
+  workerSeen: 'finder.worker_seen',
 } as const;
+
+export type FinderEngine = 'terminal' | 'api';
 
 export const DEFAULT_COUNTRIES = ['US', 'CA', 'GB', 'AU', 'NZ', 'IE'];
 
 export type FinderConfig = {
   enabled: boolean;
+  engine: FinderEngine;
   anthropicKey: string | null;
   outscraperKey: string | null;
   maxReviews: number;
@@ -52,11 +59,14 @@ export type FinderConfig = {
 const num = (v: string | null, fallback: number) => (v != null && Number.isFinite(Number(v)) ? Number(v) : fallback);
 
 export async function finderConfig(): Promise<FinderConfig> {
-  const [enabled, anthropicKey, outscraperKey, maxReviews, maxPerRequest, dailyCap, countries] = await Promise.all(
-    [FINDER.enabled, FINDER.anthropicKey, FINDER.outscraperKey, FINDER.maxReviews, FINDER.maxPerRequest, FINDER.dailyCap, FINDER.countries].map(getSetting),
+  const [enabled, engine, anthropicKey, outscraperKey, maxReviews, maxPerRequest, dailyCap, countries] = await Promise.all(
+    [FINDER.enabled, FINDER.engine, FINDER.anthropicKey, FINDER.outscraperKey, FINDER.maxReviews, FINDER.maxPerRequest, FINDER.dailyCap, FINDER.countries].map(
+      getSetting,
+    ),
   );
   return {
     enabled: enabled !== '0',
+    engine: engine === 'api' ? 'api' : 'terminal',
     anthropicKey: anthropicKey ?? process.env.ANTHROPIC_API_KEY ?? null,
     outscraperKey: outscraperKey ?? process.env.OUTSCRAPER_API_KEY ?? null,
     maxReviews: num(maxReviews, 15),
@@ -66,8 +76,20 @@ export async function finderConfig(): Promise<FinderConfig> {
   };
 }
 
-// On, with both keys: new requests go straight to the finder.
-export const finderReady = (c: FinderConfig) => c.enabled && !!c.anthropicKey && !!c.outscraperKey;
+// On and connected: new requests go straight to the finder. The terminal engine needs no Anthropic key.
+export const finderReady = (c: FinderConfig) => c.enabled && !!c.outscraperKey && (c.engine === 'terminal' || !!c.anthropicKey);
+
+// The terminal worker checks in every poll, so the admin can tell whether it's running.
+export async function markWorkerSeen() {
+  await setSetting(FINDER.workerSeen, new Date().toISOString());
+}
+
+export async function workerSeenAt() {
+  const v = await getSetting(FINDER.workerSeen);
+  return v ? new Date(v) : null;
+}
+
+export const workerOnline = (seen: Date | null) => !!seen && Date.now() - seen.getTime() < 2 * 60_000;
 
 async function runSecret() {
   const existing = await getSetting(FINDER.runSecret);
@@ -230,12 +252,14 @@ const PickSchema = z.object({
   ),
 });
 
-function client(key: string) {
-  return new Anthropic({ apiKey: key, maxRetries: 3 });
-}
+// One structured question to Claude, answered by whichever engine is running the round.
+export type Ask = <T extends z.ZodType>(effort: 'low' | 'medium', schema: T, system: string, user: string) => Promise<z.infer<T>>;
 
-async function ask<T extends z.ZodType>(key: string, effort: 'low' | 'medium', schema: T, system: string, user: string): Promise<z.infer<T>> {
-  const res = await client(key).beta.messages.parse({
+// Claude can't answer right now (e.g. the subscription's usage limit): leave the request queued and try later.
+export class FinderPause extends Error {}
+
+export const apiAsk = (key: string): Ask => async (effort, schema, system, user) => {
+  const res = await new Anthropic({ apiKey: key, maxRetries: 3 }).beta.messages.parse({
     model: MODEL,
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
@@ -246,9 +270,9 @@ async function ask<T extends z.ZodType>(key: string, effort: 'low' | 'medium', s
   });
   if (res.stop_reason === 'refusal' || !res.parsed_output) throw new Error(`Claude returned no answer (${res.stop_reason})`);
   return res.parsed_output;
-}
+};
 
-export async function planSearches(key: string, req: LeadRequest, needed: number, count: number, countries: string[]) {
+export async function planSearches(ask: Ask, req: LeadRequest, needed: number, count: number, countries: string[]) {
   const system = `${WHO}
 
 You plan Google Maps searches that will turn up these businesses. Each search is one business type in one town.
@@ -263,7 +287,7 @@ Rep's notes: ${req.notes ?? 'none'}
 Searches already run (don't repeat): ${req.finderQueries.length ? req.finderQueries.join(' | ') : 'none'}
 
 Plan exactly ${count} new searches.`;
-  const out = await ask(key, 'low', PlanSchema, system, user);
+  const out = await ask('low', PlanSchema, system, user);
   const done = new Set(req.finderQueries.map((q) => q.toLowerCase()));
   return out.searches
     .map((s) => ({ query: s.query.trim().slice(0, 150), region: s.region.trim().toUpperCase().slice(0, 2) }))
@@ -271,7 +295,7 @@ Plan exactly ${count} new searches.`;
     .slice(0, count);
 }
 
-export async function pickBest(key: string, req: LeadRequest, cands: Candidate[], needed: number) {
+export async function pickBest(ask: Ask, req: LeadRequest, cands: Candidate[], needed: number) {
   const list = cands.map((c, id) => ({
     id,
     name: c.name,
@@ -295,7 +319,7 @@ Pick at most ${needed}, best first, and leave out anything that doesn't fit even
 
 Candidates:
 ${JSON.stringify(list)}`;
-  const out = await ask(key, 'medium', PickSchema, system, user);
+  const out = await ask('medium', PickSchema, system, user);
   const used = new Set<number>();
   return out.picks
     .filter((p) => Number.isInteger(p.id) && p.id >= 0 && p.id < cands.length && !used.has(p.id) && used.add(p.id))
@@ -370,24 +394,27 @@ async function claim(id: number) {
   return req ?? null;
 }
 
-// One round of searching. Returns true when another round should follow.
-export async function runFinderRound(id: number): Promise<boolean> {
+// One round of searching. Returns true when another round should follow. `ask` is the terminal engine when
+// called from `npm run finder`; otherwise the API key is used.
+export async function runFinderRound(id: number, engineAsk?: Ask): Promise<boolean> {
   const req = await claim(id);
   if (!req) return false;
   const db = await getDb();
   const cfg = await finderConfig();
   try {
-    if (!cfg.anthropicKey || !cfg.outscraperKey) throw new Error('The lead finder is missing its Claude or Outscraper key.');
+    if (!cfg.outscraperKey) throw new Error('The lead finder is missing its Outscraper key.');
+    const ask = engineAsk ?? (cfg.anthropicKey ? apiAsk(cfg.anthropicKey) : null);
+    if (!ask) throw new Error('The lead finder is missing its Claude API key.');
     const needed = req.quantity - req.deliveredCount;
     if (needed <= 0 || req.finderRounds >= maxRounds(req.quantity)) return finish(req);
 
-    const searches = await planSearches(cfg.anthropicKey, req, needed, Math.min(5, 2 + Math.ceil(needed / 15)), cfg.countries);
+    const searches = await planSearches(ask, req, needed, Math.min(5, 2 + Math.ceil(needed / 15)), cfg.countries);
     const results = await Promise.allSettled(searches.map((s) => searchMaps(cfg.outscraperKey!, s.query, s.region)));
     const places = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
     if (searches.length && results.every((r) => r.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason;
 
     const fresh = await unseen(screen(places, cfg.maxReviews));
-    const picks = fresh.length ? await pickBest(cfg.anthropicKey, req, fresh.slice(0, 100), needed) : [];
+    const picks = fresh.length ? await pickBest(ask, req, fresh.slice(0, 100), needed) : [];
     const added = await deliver(req, picks);
 
     const [after] = await db
@@ -398,6 +425,7 @@ export async function runFinderRound(id: number): Promise<boolean> {
         finderScanned: sql`${leadRequests.finderScanned} + ${places.length}`,
         finderQueries: [...req.finderQueries, ...searches.map((s) => s.query)],
         finderBeatAt: new Date(),
+        finderError: null,
         status: req.deliveredCount + added > 0 ? 'partial' : req.status,
         // Hand over to the next round (which claims 'queued'), unless the owner stopped it meanwhile.
         finderStatus: sql`case when ${leadRequests.finderStatus} = 'running' then 'queued' else ${leadRequests.finderStatus} end`,
@@ -409,6 +437,11 @@ export async function runFinderRound(id: number): Promise<boolean> {
     return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof FinderPause) {
+      // Nothing was handed out this round; it runs again once Claude is available.
+      await db.update(leadRequests).set({ finderStatus: 'queued', finderError: msg.slice(0, 500) }).where(eq(leadRequests.id, req.id));
+      throw e;
+    }
     await db.update(leadRequests).set({ finderStatus: 'failed', finderError: msg.slice(0, 500) }).where(eq(leadRequests.id, req.id));
     await notifyAdmins({ title: `Lead finder stopped on ${describeRequest(req)}`, body: msg.slice(0, 200), href: requestHref('admin', req.id) });
     return false;
@@ -440,8 +473,10 @@ async function finish(req: LeadRequest) {
   return false;
 }
 
-// Start (or continue) a request's run in a fresh function call. Call inside after().
+// Start (or continue) a request's run in a fresh function call. Call inside after(). With the terminal engine
+// there's nothing to start: the worker on the owner's computer picks queued requests up.
 export async function kickFinder(origin: string, id: number) {
+  if ((await finderConfig()).engine !== 'api') return;
   await fetch(`${origin}/api/finder/run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-finder-secret': await runSecret() },
@@ -470,4 +505,19 @@ export async function queueFinder(id: number) {
 
 export async function saveFinderKey(which: 'anthropicKey' | 'outscraperKey', value: string | null) {
   await setSetting(FINDER[which], value);
+}
+
+// Requests the terminal worker should work on: queued, or running with no sign of life.
+export async function pendingFinderRequests() {
+  const db = await getDb();
+  return db
+    .select()
+    .from(leadRequests)
+    .where(
+      or(
+        eq(leadRequests.finderStatus, 'queued'),
+        and(eq(leadRequests.finderStatus, 'running'), lt(leadRequests.finderBeatAt, new Date(Date.now() - STALE_MS))),
+      ),
+    )
+    .orderBy(leadRequests.createdAt);
 }

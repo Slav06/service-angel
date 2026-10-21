@@ -7,7 +7,7 @@ import { getDb } from '@/db';
 import { finderPlaces, leadRequests, users } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth';
 import { ago } from '@/lib/format';
-import { finderConfig, finderReady } from '@/lib/lead-finder';
+import { finderConfig, finderReady, workerOnline, workerSeenAt } from '@/lib/lead-finder';
 import { describeRequest } from '@/lib/requests';
 
 export const dynamic = 'force-dynamic';
@@ -55,8 +55,9 @@ function KeyRow({ which, label, value, help }: { which: 'anthropic' | 'outscrape
 export default async function LeadFinder() {
   await requireAdmin();
   const db = await getDb();
-  const [cfg, [totals], recent] = await Promise.all([
+  const [cfg, seen, [totals], recent] = await Promise.all([
     finderConfig(),
+    workerSeenAt(),
     db
       .select({
         given: sql<number>`(select count(*)::int from ${finderPlaces})`,
@@ -74,6 +75,8 @@ export default async function LeadFinder() {
       .limit(15),
   ]);
   const ready = finderReady(cfg);
+  const terminal = cfg.engine === 'terminal';
+  const online = workerOnline(seen);
 
   return (
     <>
@@ -88,20 +91,44 @@ export default async function LeadFinder() {
               ? 'On — new lead requests go straight to Claude.'
               : !cfg.enabled
                 ? 'Off — lead requests come to you to fill by hand.'
-                : 'Connect both keys below to switch it on. Until then, lead requests come to you to fill by hand.'}
+                : `Connect ${terminal ? 'Outscraper' : 'both keys'} below to switch it on. Until then, lead requests come to you to fill by hand.`}
           </div>
 
+          {terminal && (
+            <div className={`card text-sm ${online ? '' : 'border-amber-200'}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${online ? 'bg-green-500' : 'bg-amber-500'}`} />
+                <p className="font-medium">
+                  Claude on your computer: {online ? 'running' : 'not running'}
+                  <span className="font-normal text-zinc-500"> · {seen ? `last checked in ${ago(seen)}` : 'never started'}</span>
+                </p>
+              </div>
+              <p className="mt-2 text-zinc-600">
+                Leads are found with your Claude subscription, by a small program on your computer. It only works while it’s running — requests that come in
+                while it’s off wait and are filled as soon as you start it.
+              </p>
+              {!online && (
+                <div className="mt-3 rounded-lg bg-zinc-900 px-4 py-3 font-mono text-xs text-zinc-100">
+                  cd ~/service-angel && npm run finder
+                </div>
+              )}
+              {!online && <p className="mt-2 text-xs text-zinc-500">Run that in a terminal and leave the window open, or ask Claude Code to start the lead finder.</p>}
+            </div>
+          )}
+
           <div className="card space-y-4">
-            <KeyRow
-              which="anthropic"
-              label="Claude (Anthropic API)"
-              value={cfg.anthropicKey}
-              help={
-                <>
-                  Plans the searches and picks the best businesses. At <b>console.anthropic.com</b>: add credit under Billing, then API keys → Create key.
-                </>
-              }
-            />
+            {!terminal && (
+              <KeyRow
+                which="anthropic"
+                label="Claude (Anthropic API)"
+                value={cfg.anthropicKey}
+                help={
+                  <>
+                    Plans the searches and picks the best businesses. At <b>console.anthropic.com</b>: add credit under Billing, then API keys → Create key.
+                  </>
+                }
+              />
+            )}
             <KeyRow
               which="outscraper"
               label="Outscraper (Google Maps data)"
@@ -119,6 +146,13 @@ export default async function LeadFinder() {
             <label className="flex items-center gap-2 text-sm font-medium sm:col-span-2">
               <input type="checkbox" name="enabled" defaultChecked={cfg.enabled} /> Fill rep requests automatically
             </label>
+            <div className="sm:col-span-2">
+              <label className="label">Which Claude</label>
+              <select name="engine" defaultValue={cfg.engine} className="input">
+                <option value="terminal">My Claude subscription — runs on my computer (no API costs)</option>
+                <option value="api">Anthropic API key — runs on the website, even when my computer is off</option>
+              </select>
+            </div>
             <div>
               <label className="label">Most Google reviews a lead can have</label>
               <input name="maxReviews" type="number" min={0} max={500} defaultValue={cfg.maxReviews} className="input" />
