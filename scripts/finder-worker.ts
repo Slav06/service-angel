@@ -6,7 +6,7 @@
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
 import { leadRequests, users } from '@/db/schema';
-import { finderConfig, FinderPause, markWorkerSeen, pendingFinderRequests, runFinderRound } from '@/lib/lead-finder';
+import { finderConfig, FinderPause, lastDropped, markWorkerSeen, pendingFinderRequests, runFinderRound } from '@/lib/lead-finder';
 import { cliAsk, cliResearch } from '@/lib/lead-finder-cli';
 import { describeRequest } from '@/lib/requests';
 
@@ -26,6 +26,7 @@ async function work(id: number) {
     const more = await runFinderRound(id, cliAsk, cliResearch);
     const [r] = await db.select().from(leadRequests).where(eq(leadRequests.id, id));
     log(`  round ${round}: ${r.deliveredCount} of ${r.quantity} found, ${r.finderScanned} businesses checked${r.finderStatus === 'failed' ? ` — stopped: ${r.finderError}` : ''}`);
+    for (const d of lastDropped) log(`    left out ${d}`);
     if (!more) break;
   }
 }

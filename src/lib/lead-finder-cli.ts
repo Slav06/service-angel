@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { leads } from '@/db/schema';
-import { FinderPause, hasRealWebsite, mapsSearchUrl, phone10, WHO, type Ask, type LeadPick, type Research } from './lead-finder';
+import { anyIsBlank, FinderPause, hasRealWebsite, mapsSearchUrl, phone10, WHO, type Ask, type LeadPick, type Research } from './lead-finder';
 import { describeRequest } from './requests';
 
 // The lead finder's terminal engine: answers with the owner's Claude subscription by running Claude Code
@@ -84,7 +84,8 @@ const ResearchSchema = z.object({
       country: z.string().describe('Two-letter country code, e.g. US'),
       category: z.string(),
       address: z.string().nullable(),
-      online_presence_url: z.string().nullable().describe('Their Facebook/Instagram/directory page, or null'),
+      has_own_website: z.boolean().describe('True if you found a website of their own (not a social or directory page)'),
+      social_url: z.string().nullable().describe('Their own Facebook or Instagram page, or null'),
       google_reviews: z.number().int().nullable().describe('Google review count you saw, or null if not checked'),
       source_url: z.string().describe('The page where you read the phone number'),
       score: z.number().int().describe('1-10: how good a website lead this is'),
@@ -118,14 +119,16 @@ You find these businesses yourself by searching the web (WebSearch) and reading 
 Yellow Pages, local directories, chamber of commerce lists. Every business you return must:
 - be a real business you found on a page in this task. Copy its phone number exactly as written on that page and give that page as
   source_url. Never guess, complete or reformat a number from memory — anything not on a page you read will be thrown out.
-- have no website of its own. Search "<name> <town>" to check. Only a Facebook, Instagram or directory page is fine (put it in
-  online_presence_url); if it has its own website, leave it out.
+- have no website of its own. Search "<name> <town>" to check. Being listed in directories, or having only a Facebook or
+  Instagram page (put that in social_url), is fine; if it has a website of its own, leave it out.
 - have few Google reviews — at most ${cfg.maxReviews} — when you can see the count; give the count, or null if you couldn't check.
 - be small and owner-run: no chains, franchises, branches or larger companies.
 Work efficiently: start from directory or listing pages that show many local businesses with phone numbers, then check the
-promising ones. Stop as soon as you have the number asked for.`;
+promising ones. Stop as soon as you have the number asked for.
+When the rep didn't name a business type, mix several types from the list above (no more than a third of one type), and spread
+across different towns.`;
   const user = `Rep's request: ${describeRequest(req)}
-Niche: ${req.niche ?? 'any (choose business types from the list above)'} · Area: ${req.area ?? `any town in ${cfg.countries.join(', ')} (prefer small towns and suburbs)`}
+Niche: ${anyIsBlank(req.niche) ?? 'any (choose business types from the list above)'} · Area: ${anyIsBlank(req.area) ?? `any town in ${cfg.countries.join(', ')} (prefer small towns and suburbs)`}
 Rep's notes: ${req.notes ?? 'none'}
 Searches already done for this request — try different towns or types: ${req.finderQueries.length ? req.finderQueries.slice(-40).join(' | ') : 'none'}
 Already given for this request — don't return again: ${given.length ? given.map((g) => g.business).join(' | ') : 'none'}
@@ -142,6 +145,7 @@ Find ${needed} businesses.`;
     ...LEAN,
   ];
   const raw = await run(args, user, 20 * 60_000);
+  if (process.env.FINDER_DEBUG_DIR) writeFileSync(path.join(process.env.FINDER_DEBUG_DIR, `research-${req.id}-${Date.now()}.jsonl`), raw);
 
   // Everything the web tools returned is the evidence; the final line carries the answer.
   let evidence = '';
@@ -165,13 +169,26 @@ Find ${needed} businesses.`;
   const seenText = words(evidence);
 
   const picks: LeadPick[] = [];
+  const dropped: string[] = [];
   for (const b of out.businesses) {
     const digits = phone10(b.phone);
     const firstWords = words(b.name).split(' ').slice(0, 2).join(' ');
     // The anti-invention check: the number and the name must both appear in what Claude read.
-    if (digits.length < 7 || !seenPhones.has(phoneKey(b.phone)) || !firstWords || !seenText.includes(firstWords)) continue;
-    const site = b.online_presence_url && /^https?:\/\//i.test(b.online_presence_url) ? b.online_presence_url : null;
-    if (hasRealWebsite(site)) continue;
+    if (digits.length < 7 || !seenPhones.has(phoneKey(b.phone))) {
+      dropped.push(`${b.name}: phone ${b.phone} not on any page read`);
+      continue;
+    }
+    if (!firstWords || !seenText.includes(firstWords)) {
+      dropped.push(`${b.name}: name not on any page read`);
+      continue;
+    }
+    if (b.has_own_website) {
+      dropped.push(`${b.name}: has its own website`);
+      continue;
+    }
+    // Keep a social page as the lead's "current page"; a directory URL isn't theirs, so it's not kept.
+    const social = b.social_url && /^https?:\/\//i.test(b.social_url) ? b.social_url : null;
+    const site = social && !hasRealWebsite(social) ? social : null;
     const country = b.country.trim().toUpperCase().slice(0, 2);
     picks.push({
       cand: {
@@ -192,5 +209,5 @@ Find ${needed} businesses.`;
       why: b.why.trim().slice(0, 300),
     });
   }
-  return { picks, searched: out.searches.map((q) => q.slice(0, 150)), scanned: out.businesses.length };
+  return { picks, dropped, searched: out.searches.map((q) => q.slice(0, 150)), scanned: out.businesses.length };
 };

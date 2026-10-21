@@ -229,6 +229,9 @@ async function unseen(cands: Candidate[]) {
 
 // ---------- Claude ----------
 
+// "any", "anywhere", "-"… typed into a request field means no preference.
+export const anyIsBlank = (v: string | null) => (v && !/^\s*(any|anything|anywhere|all|everywhere|none|n\/a|-+)\s*$/i.test(v) ? v : null);
+
 export const WHO = `Service Angel builds and runs websites for small businesses on a $500/month plan. Our sales reps cold-call business owners.
 The ideal lead is a small, independent business run by its owner, a family or a small team: no website of its own (at most a Facebook,
 Instagram or directory page), few Google reviews, still building its customer base, and the kind of business whose customers search
@@ -285,7 +288,7 @@ Rules:
 - Spread searches across different towns and types; never repeat a search that was already run.
 - Use the local word for the trade (e.g. "plumber" in the US, "plumber" or "heating engineer" in the UK).`;
   const user = `Rep's request: ${describeRequest(req)}
-Niche: ${req.niche ?? 'any'} · Area: ${req.area ?? 'any'} · Still needed: ${needed}
+Niche: ${anyIsBlank(req.niche) ?? 'any'} · Area: ${anyIsBlank(req.area) ?? 'any'} · Still needed: ${needed}
 Rep's notes: ${req.notes ?? 'none'}
 Searches already run (don't repeat): ${req.finderQueries.length ? req.finderQueries.join(' | ') : 'none'}
 
@@ -409,7 +412,14 @@ async function claim(id: number) {
 // ---------- Web research (no Outscraper) ----------
 
 // Finds businesses by searching the web; returns picks whose phone and name were verified against what it read.
-export type Research = (req: LeadRequest, needed: number, cfg: FinderConfig) => Promise<{ picks: LeadPick[]; searched: string[]; scanned: number }>;
+export type Research = (
+  req: LeadRequest,
+  needed: number,
+  cfg: FinderConfig,
+) => Promise<{ picks: LeadPick[]; dropped: string[]; searched: string[]; scanned: number }>;
+
+// Why researched businesses were left out, for the worker's log.
+export let lastDropped: string[] = [];
 
 export const mapsSearchUrl = (name: string, place: string) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${place}`.trim())}`;
@@ -451,7 +461,13 @@ export async function runFinderRound(id: number, engineAsk?: Ask, research?: Res
     } else {
       if (!research) throw new Error('Without an Outscraper key, leads are found by the lead finder on your computer (npm run finder).');
       const found = await research(req, Math.min(needed, 10), cfg);
-      picks = (await screenResearch(found.picks, cfg.maxReviews)).slice(0, needed);
+      const kept = await screenResearch(found.picks, cfg.maxReviews);
+      const keptIds = new Set(kept.map((p) => p.cand.place_id));
+      lastDropped = [
+        ...found.dropped,
+        ...found.picks.filter((p) => !keptIds.has(p.cand.place_id)).map((p) => `${p.cand.name}: already given out, or too many reviews`),
+      ];
+      picks = kept.slice(0, needed);
       queries = found.searched;
       scanned = found.scanned;
     }
