@@ -31,31 +31,43 @@ async function work(id: number) {
   }
 }
 
+// One pass: check in, then fill whatever is waiting. Returns false when --once should stop early.
+async function tick(state: { quietLogged: boolean }) {
+  await markWorkerSeen();
+  const cfg = await finderConfig();
+  if (!cfg.enabled || cfg.engine !== 'terminal') {
+    if (!state.quietLogged) log('Paused: the lead finder is off, or set to use the API key (Owner admin → Lead finder).');
+    state.quietLogged = true;
+    return true;
+  }
+  state.quietLogged = false;
+  for (const req of await pendingFinderRequests()) {
+    try {
+      await work(req.id);
+    } catch (e) {
+      if (!(e instanceof FinderPause)) throw e;
+      log(`  paused: ${e.message}. Trying again in ${PAUSE_MS / 60_000} minutes.`);
+      if (once) return false;
+      for (let waited = 0; waited < PAUSE_MS; waited += POLL_MS) {
+        await markWorkerSeen().catch(() => {}); // still here, just waiting
+        await sleep(POLL_MS);
+      }
+      break;
+    }
+  }
+  return true;
+}
+
 async function main() {
   log(once ? 'Lead finder: filling waiting requests…' : 'Lead finder is running. Leave this window open; press Ctrl+C to stop.');
-  let quietLogged = false;
+  const state = { quietLogged: false };
   for (;;) {
-    await markWorkerSeen();
-    const cfg = await finderConfig();
-    if (!cfg.enabled || cfg.engine !== 'terminal') {
-      if (!quietLogged) log('Paused: the lead finder is off, or set to use the API key (Owner admin → Lead finder).');
-      quietLogged = true;
-    } else {
-      quietLogged = false;
-      for (const req of await pendingFinderRequests()) {
-        try {
-          await work(req.id);
-        } catch (e) {
-          if (!(e instanceof FinderPause)) throw e;
-          log(`  paused: ${e.message}. Trying again in ${PAUSE_MS / 60_000} minutes.`);
-          if (once) return;
-          for (let waited = 0; waited < PAUSE_MS; waited += POLL_MS) {
-            await markWorkerSeen(); // still here, just waiting
-            await sleep(POLL_MS);
-          }
-          break;
-        }
-      }
+    try {
+      if (!(await tick(state))) return;
+    } catch (e) {
+      if (once) throw e;
+      // A dropped connection or a database hiccup shouldn't stop the finder overnight: note it and try again shortly.
+      log(`  problem: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}. Trying again in ${POLL_MS / 1000} seconds.`);
     }
     if (once) break;
     await sleep(POLL_MS);
